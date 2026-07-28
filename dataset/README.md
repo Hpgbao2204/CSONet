@@ -67,13 +67,18 @@ one through ten relational obligations. This is a controlled workload study,
 not a claim that one V2 contains ten independent mutations.
 
 `results/raw/fuzz_budget_sweep.csv` contains 480 observations for deterministic
-trial budgets 16, 32, 64, and 128. It supports the category-level baseline
-latency panel without recomputing values inside the plotting script.
+trial budgets 16, 32, 64, and 128. It is retained as a supplementary
+sensitivity result even though the final four-figure paper layout does not
+use a budget panel.
 
-The figure generator emits eleven independent vector PDF panels. Ten panels
-use four or five measured series and 18-point Matplotlib-default typography;
-`figure_scalability.pdf` retains its accepted two-panel scatter design. Files
-remain separate so the paper author can assemble subfigures in Overleaf.
+The figure generator emits ten independent square vector PDFs. Storage panels
+1a--1d and behavior panels 2a--2d are assembled as two four-panel figures in
+Overleaf; the obligation and symbolic-path scalability plots are separate
+large figures. All panels use 18-point Matplotlib-default typography. Connected
+profiles, quantile curves, and an UpSet-style incidence matrix replace
+isolated-point summaries. Timing densities use Gaussian KDE with Scott's
+bandwidth; the generator never changes a measured value or categorical
+outcome.
 
 ## Statistical protocol
 

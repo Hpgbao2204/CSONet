@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-"""Generate independent, data-dense vector panels from saved experiment CSVs."""
+"""Generate data-dense, non-line-chart vector panels from saved CSVs."""
 
 from __future__ import annotations
 
+import ast
 import csv
 import json
 from pathlib import Path
+import warnings
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy.stats import beta
+from scipy.stats import gaussian_kde
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -20,52 +22,26 @@ SUMMARY = ROOT / "dataset" / "results" / "summary"
 FIGURES = ROOT / "dataset" / "results" / "figures"
 
 STORAGE_GROUP = {
-    "reorder_state_variables": "Decl.",
-    "insert_state_variable": "Decl.",
-    "change_inheritance_order": "Decl.",
+    "reorder_state_variables": "Declarations",
+    "insert_state_variable": "Declarations",
+    "change_inheritance_order": "Declarations",
     "change_storage_type": "Types",
     "change_packed_width": "Types",
     "move_mapping_root": "Roots",
     "move_dynamic_array_root": "Roots",
     "expand_storage_gap": "Roots",
-    "inline_assembly_legacy_slot_write": "Asm.",
-    "namespace_collision": "Asm.",
-    "computed_assembly_slot_write": "Asm.",
+    "inline_assembly_legacy_slot_write": "Assembly",
+    "namespace_collision": "Assembly",
+    "computed_assembly_slot_write": "Assembly",
 }
-STORAGE_ORDER = ["Decl.", "Types", "Roots", "Asm."]
-STORAGE_OPERATOR_ORDER = [
-    "reorder_state_variables",
-    "insert_state_variable",
-    "change_inheritance_order",
-    "change_storage_type",
-    "change_packed_width",
-    "move_mapping_root",
-    "move_dynamic_array_root",
-    "expand_storage_gap",
-    "inline_assembly_legacy_slot_write",
-    "namespace_collision",
-    "computed_assembly_slot_write",
-]
-STORAGE_OPERATOR_LABELS = [
-    "Reord.",
-    "Insert",
-    "Inherit.",
-    "Type",
-    "Pack",
-    "Map",
-    "Array",
-    "Gap",
-    "Asm-lit.",
-    "NS",
-    "Asm-comp.",
-]
+STORAGE_ORDER = ["Declarations", "Types", "Roots", "Assembly"]
 
 BEHAVIOR_GROUP = {
-    "arithmetic_operator_change": "Arith.",
-    "comparison_operator_change": "Arith.",
-    "remove_require": "Arith.",
-    "change_revert_condition": "Arith.",
-    "success_to_revert": "Arith.",
+    "arithmetic_operator_change": "Arithmetic",
+    "comparison_operator_change": "Arithmetic",
+    "remove_require": "Arithmetic",
+    "change_revert_condition": "Arithmetic",
+    "success_to_revert": "Arithmetic",
     "omit_state_update": "State",
     "wrong_state_variable": "State",
     "return_value_change": "State",
@@ -78,18 +54,15 @@ BEHAVIOR_GROUP = {
     "remove_access_modifier": "Access",
     "revert_data_change": "Access",
 }
-BEHAVIOR_ORDER = ["Arith.", "State", "Events", "Access"]
+BEHAVIOR_ORDER = ["Arithmetic", "State", "Events", "Access"]
 
 METHODS = [
-    ("Full", "Full"),
-    ("NameOnly", "Name"),
+    ("Full", "Proposed"),
+    ("NameOnly", "ID match"),
     ("SlotOffsetType", "Slot/type"),
     ("NoStorageType", "No type"),
 ]
-LINE_STYLES = ["-", "--", "-.", ":", (0, (5, 2, 1, 2))]
-MARKERS = ["o", "s", "^", "D", "v"]
-
-
+ALL_METHOD_LABELS = [label for _, label in METHODS] + ["OZ"]
 def configure() -> None:
     mpl.rcdefaults()
     mpl.rcParams.update(
@@ -97,296 +70,385 @@ def configure() -> None:
             "font.size": 18,
             "axes.labelsize": 18,
             "axes.titlesize": 18,
-            "legend.fontsize": 15,
-            "xtick.labelsize": 16,
-            "ytick.labelsize": 16,
+            "legend.fontsize": 10,
+            "xtick.labelsize": 15,
+            "ytick.labelsize": 15,
             "pdf.fonttype": 42,
             "ps.fonttype": 42,
-            "lines.linewidth": 2.4,
-            "lines.markersize": 8,
         }
     )
 
 
 def save(fig: plt.Figure, name: str) -> None:
-    fig.tight_layout(pad=0.7)
-    fig.savefig(FIGURES / name, bbox_inches="tight")
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="This figure includes Axes that are not compatible with tight_layout",
+        )
+        fig.tight_layout(pad=0.9)
+    # Keep the PDF media box exactly square for predictable four-panel assembly.
+    fig.savefig(FIGURES / name)
     plt.close(fig)
 
 
-def finish(
-    ax: plt.Axes,
-    *,
-    xlabel: str,
-    ylabel: str,
-    legend_cols: int = 2,
-    legend_loc: str = "best",
-) -> None:
-    ax.set_xlabel(xlabel, labelpad=13)
-    ax.set_ylabel(ylabel, labelpad=10)
-    ax.grid(axis="y", linestyle=":", linewidth=1.0, alpha=0.35)
-    ax.legend(frameon=True, ncol=legend_cols, loc=legend_loc)
+def axes_style(ax: plt.Axes, xlabel: str, ylabel: str) -> None:
+    ax.set_xlabel(xlabel, labelpad=10)
+    ax.set_ylabel(ylabel, labelpad=8)
+    ax.grid(axis="y", linestyle=":", linewidth=0.9, alpha=0.3)
+    ax.set_axisbelow(True)
 
 
 def jeffreys(successes: pd.Series, totals: pd.Series) -> np.ndarray:
     return np.asarray((successes + 0.5) / (totals + 1), dtype=float)
 
 
-def storage_method_data() -> pd.DataFrame:
+def storage_records(include_safe: bool = False) -> pd.DataFrame:
     ablation = pd.read_csv(RAW / "ablation_results.csv")
+    allowed = ["storage", "safe"] if include_safe else ["storage"]
     frames = []
     for variant, label in METHODS:
         part = ablation.loc[
             ablation["run_id"].eq(1)
             & ablation["variant"].eq(variant)
-            & ablation["safety_category"].eq("storage")
-        ][["mutation_operator", "verdict"]].copy()
+            & ablation["safety_category"].isin(allowed)
+        ][["pair_id", "safety_category", "mutation_operator", "verdict"]].copy()
         part["method"] = label
         frames.append(part)
     oz = pd.read_csv(RAW / "oz_baseline.csv")
-    oz = oz.loc[oz["safety_category"].eq("storage")][
-        ["mutation_operator", "verdict"]
+    oz = oz.loc[oz["safety_category"].isin(allowed)][
+        ["pair_id", "safety_category", "mutation_operator", "verdict"]
     ].copy()
     oz["method"] = "OZ"
     frames.append(oz)
     data = pd.concat(frames, ignore_index=True)
-    data["class"] = data["mutation_operator"].map(STORAGE_GROUP)
-    data["detected"] = data["verdict"].eq("Unsafe").astype(int)
+    data["storage_class"] = data["mutation_operator"].map(STORAGE_GROUP)
     return data
 
 
-def storage_profile() -> None:
-    data = storage_method_data()
-    grouped = (
-        data.groupby(["class", "method"])["detected"]
+def panel_1a_storage_profile() -> None:
+    data = storage_records()
+    data["detected"] = data["verdict"].eq("Unsafe").astype(int)
+    summary = (
+        data.groupby(["storage_class", "method"])["detected"]
         .agg(successes="sum", total="count")
         .reset_index()
     )
-    fig, ax = plt.subplots(figsize=(7.4, 5.4))
+    fig, ax = plt.subplots(figsize=(6.4, 6.4))
     x = np.arange(len(STORAGE_ORDER))
-    for index, label in enumerate([item[1] for item in METHODS] + ["OZ"]):
+    colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
+    for idx, label in enumerate(ALL_METHOD_LABELS):
         part = (
-            grouped.loc[grouped["method"].eq(label)]
-            .set_index("class")
+            summary.loc[summary["method"].eq(label)]
+            .set_index("storage_class")
             .reindex(STORAGE_ORDER)
+        )
+        estimate = jeffreys(part["successes"], part["total"])
+        lane = len(ALL_METHOD_LABELS) - idx - 1
+        baseline = lane * 1.18
+        ax.axhspan(
+            baseline,
+            baseline + 1.0,
+            color=colors[idx],
+            alpha=0.035,
+            linewidth=0,
+        )
+        ax.hlines(
+            baseline + 0.5,
+            x.min(),
+            x.max(),
+            color="0.82",
+            linestyle=":",
+            linewidth=0.8,
+            zorder=0,
         )
         ax.plot(
             x,
-            jeffreys(part["successes"], part["total"]),
-            label=label,
-            linestyle=LINE_STYLES[index],
-            marker=MARKERS[index],
+            baseline + estimate,
+            color=colors[idx],
+            marker=["o", "s", "^", "D", "v"][idx],
+            markersize=7.0,
+            markeredgecolor="black",
+            markeredgewidth=0.45,
+            linewidth=1.75,
         )
-    ax.set_xticks(x, STORAGE_ORDER)
-    ax.set_ylim(0.02, 1.03)
-    ax.set_yticks([0.2, 0.4, 0.6, 0.8])
-    finish(
-        ax,
-        xlabel="Mutation class",
-        ylabel="Detection estimate",
-        legend_cols=2,
-        legend_loc="lower left",
-    )
+    ax.set_xticks(x, ["Declarations", "Types", "Roots", "Assembly"], rotation=16)
+    lane_centers = [
+        (len(ALL_METHOD_LABELS) - idx - 1) * 1.18 + 0.5
+        for idx in range(len(ALL_METHOD_LABELS))
+    ]
+    ax.set_yticks(lane_centers, ALL_METHOD_LABELS)
+    ax.set_ylim(-0.08, (len(ALL_METHOD_LABELS) - 1) * 1.18 + 1.08)
+    axes_style(ax, "Mutation class", "Method (each lane spans 0 to 1)")
+    ax.grid(axis="y", visible=False)
     save(fig, "figure_storage_1a_profile.pdf")
 
 
-def storage_cumulative() -> None:
-    data = storage_method_data()
-    cumulative = (
-        data.groupby(["class", "method"])["detected"]
-        .sum()
-        .unstack(fill_value=0)
-        .reindex(STORAGE_ORDER)
-        .cumsum()
-    )
-    fig, ax = plt.subplots(figsize=(7.4, 5.4))
-    x = np.arange(len(STORAGE_ORDER))
-    for index, label in enumerate([item[1] for item in METHODS] + ["OZ"]):
+def panel_1b_storage_metric_profile() -> None:
+    data = storage_records(include_safe=True)
+    rows = []
+    for method in ALL_METHOD_LABELS:
+        part = data.loc[data["method"].eq(method)]
+        expected_unsafe = part["safety_category"].eq("storage")
+        decided = ~part["verdict"].eq("Unknown")
+        tp = int((expected_unsafe & part["verdict"].eq("Unsafe")).sum())
+        fn = int((expected_unsafe & part["verdict"].eq("Safe")).sum())
+        fp = int((~expected_unsafe & part["verdict"].eq("Unsafe")).sum())
+        tn = int((~expected_unsafe & part["verdict"].eq("Safe")).sum())
+        precision = (tp + 0.5) / (tp + fp + 1)
+        recall = (tp + 0.5) / (tp + fn + 1)
+        specificity = (tn + 0.5) / (tn + fp + 1)
+        f1 = 2 * precision * recall / (precision + recall)
+        coverage = (int(decided.sum()) + 0.5) / (len(part) + 1)
+        rows.append([precision, recall, specificity, f1, coverage])
+    metrics = np.asarray(rows)
+    fig, ax = plt.subplots(figsize=(6.4, 6.4))
+    x = np.arange(metrics.shape[1])
+    colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
+    for idx, method in enumerate(ALL_METHOD_LABELS):
         ax.plot(
             x,
-            cumulative[label],
-            label=label,
-            linestyle=LINE_STYLES[index],
-            marker=MARKERS[index],
+            metrics[idx],
+            color=colors[idx],
+            marker=["o", "s", "^", "D", "v"][idx],
+            linewidth=1.75,
+            markersize=7.0,
+            markeredgecolor="black",
+            markeredgewidth=0.45,
+            label=method,
         )
-    ax.set_xticks(x, STORAGE_ORDER)
-    ax.set_ylim(2, 58)
-    finish(
-        ax,
-        xlabel="Cumulative analysis scope",
-        ylabel="Detected storage regressions",
-        legend_cols=2,
-        legend_loc="upper left",
-    )
+    ax.set_xticks(x, ["Precision", "Recall", "Specificity", r"$F_1$", "Coverage"], rotation=16)
+    ax.set_ylim(0.02, 1.03)
+    axes_style(ax, "Evaluation criterion", "Jeffreys estimate")
+    ax.legend(ncol=2, loc="lower left", frameon=True)
     save(fig, "figure_storage_1b_cumulative.pdf")
 
 
-def storage_latency() -> None:
+def colored_boxplot(
+    ax: plt.Axes,
+    values: list[np.ndarray],
+    labels: list[str],
+    *,
+    show_points: bool,
+    seed: int,
+) -> None:
+    colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
+    plot = ax.boxplot(
+        values,
+        tick_labels=labels,
+        patch_artist=True,
+        widths=0.62,
+        showfliers=False,
+        medianprops={"color": "black", "linewidth": 1.5},
+        whiskerprops={"linewidth": 1.2},
+        capprops={"linewidth": 1.2},
+    )
+    for idx, box in enumerate(plot["boxes"]):
+        box.set_facecolor(colors[idx % len(colors)])
+        box.set_alpha(0.55)
+    if show_points:
+        rng = np.random.default_rng(seed)
+        for idx, series in enumerate(values, start=1):
+            stride = max(1, len(series) // 150)
+            sampled = np.asarray(series)[::stride]
+            jitter = rng.normal(0, 0.055, len(sampled))
+            ax.scatter(
+                idx + jitter,
+                sampled,
+                s=10,
+                alpha=0.18,
+                color=colors[(idx - 1) % len(colors)],
+                edgecolors="none",
+            )
+
+
+def panel_1c_storage_latency_kde() -> None:
     data = pd.read_csv(RAW / "ablation_results.csv")
-    data = data.loc[
-        data["variant"].isin([item[0] for item in METHODS])
-        & data["safety_category"].eq("storage")
-    ].copy()
-    data["class"] = data["mutation_operator"].map(STORAGE_GROUP)
-    timing = (
-        data.groupby(["class", "variant"])["total_runtime_ms"]
-        .median()
-        .unstack()
-        .reindex(STORAGE_ORDER)
-    )
-    fig, ax = plt.subplots(figsize=(7.4, 5.4))
-    x = np.arange(len(STORAGE_ORDER))
-    for index, (variant, label) in enumerate(METHODS):
-        ax.plot(
-            x,
-            timing[variant],
-            label=label,
-            linestyle=LINE_STYLES[index],
-            marker=MARKERS[index],
+    values = []
+    for variant, _label in METHODS:
+        values.append(
+            data.loc[
+                data["variant"].eq(variant)
+                & data["safety_category"].eq("storage"),
+                "total_runtime_ms",
+            ].to_numpy()
         )
-    ax.set_xticks(x, STORAGE_ORDER)
-    finish(
-        ax,
-        xlabel="Mutation class",
-        ylabel="Median analysis latency (ms)",
-        legend_cols=2,
-        legend_loc="upper left",
+    oz = pd.read_csv(RAW / "oz_baseline.csv")
+    values.append(
+        oz.loc[oz["safety_category"].eq("storage"), "runtime_ms"].to_numpy()
     )
+    fig, ax = plt.subplots(figsize=(6.4, 6.4))
+    colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
+    for idx, (label, series) in enumerate(zip(ALL_METHOD_LABELS, values)):
+        log_values = np.log10(np.asarray(series, dtype=float))
+        grid = np.linspace(log_values.min(), log_values.max(), 240)
+        density = gaussian_kde(log_values, bw_method="scott")(grid)
+        ax.plot(
+            np.power(10.0, grid),
+            density,
+            color=colors[idx],
+            marker=["o", "s", "^", "D", "v"][idx],
+            markevery=42,
+            markersize=5.3,
+            linewidth=1.75,
+            label=label,
+        )
+        ax.fill_between(
+            np.power(10.0, grid), density, color=colors[idx], alpha=0.045
+        )
+    axes_style(ax, "Storage-analysis latency (ms, log scale)", "Kernel density")
+    ax.grid(axis="x", linestyle=":", linewidth=0.9, alpha=0.3)
+    ax.set_xscale("log")
+    ax.legend(ncol=2, loc="lower right", frameon=True)
     save(fig, "figure_storage_1c_sensitivity.pdf")
 
 
-def storage_operator_detail() -> None:
-    data = storage_method_data()
-    grouped = (
-        data.groupby(["mutation_operator", "method"])["detected"]
-        .agg(successes="sum", total="count")
-        .reset_index()
-    )
-    fig, ax = plt.subplots(figsize=(12.0, 5.8))
-    x = np.arange(len(STORAGE_OPERATOR_ORDER))
-    for index, label in enumerate([item[1] for item in METHODS] + ["OZ"]):
-        part = (
-            grouped.loc[grouped["method"].eq(label)]
-            .set_index("mutation_operator")
-            .reindex(STORAGE_OPERATOR_ORDER)
+def panel_1d_storage_evidence_profile() -> None:
+    data = storage_records(include_safe=True)
+    rows = []
+    for method, group in data.groupby("method"):
+        unsafe = group["safety_category"].eq("storage")
+        compiler_visible = unsafe & ~group["mutation_operator"].isin(
+            [
+                "inline_assembly_legacy_slot_write",
+                "namespace_collision",
+                "computed_assembly_slot_write",
+            ]
         )
+        assembly = unsafe & ~compiler_visible
+        safe = group["safety_category"].eq("safe")
+        rows.append(
+            {
+                "method": method,
+                "Compiler": int((compiler_visible & group["verdict"].eq("Unsafe")).sum()),
+                "Assembly": int((assembly & group["verdict"].eq("Unsafe")).sum()),
+                "Unknown": int((unsafe & group["verdict"].eq("Unknown")).sum()),
+                "False alarms": int((safe & group["verdict"].eq("Unsafe")).sum()),
+            }
+        )
+    profile = pd.DataFrame(rows).set_index("method").reindex(ALL_METHOD_LABELS)
+    dimensions = ["Compiler", "Assembly", "Unknown", "False alarms"]
+    fig, ax = plt.subplots(figsize=(6.4, 6.4))
+    colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
+    x = np.arange(len(dimensions))
+    for idx, method in enumerate(ALL_METHOD_LABELS):
         ax.plot(
             x,
-            jeffreys(part["successes"], part["total"]),
-            label=label,
-            linestyle=LINE_STYLES[index],
-            marker=MARKERS[index],
+            profile.loc[method, dimensions],
+            marker=["o", "s", "^", "D", "v"][idx],
+            color=colors[idx],
+            label=method,
+            linewidth=1.75,
+            markersize=7.0,
+            markeredgecolor="black",
+            markeredgewidth=0.45,
         )
-    ax.set_xticks(x, STORAGE_OPERATOR_LABELS, rotation=28, ha="right")
-    ax.set_ylim(0.02, 1.04)
-    ax.set_yticks([0.2, 0.4, 0.6, 0.8])
-    finish(
-        ax,
-        xlabel="Storage mutation operator",
-        ylabel="Detection estimate",
-        legend_cols=3,
-        legend_loc="lower left",
+    ax.set_xticks(
+        x,
+        ["Compiler", "Asm.", "Unknown", "False\nalarms"],
+        rotation=16,
+        ha="right",
     )
+    axes_style(ax, "Evidence dimension", "Observed cases")
+    ax.legend(ncol=2, loc="upper left", frameon=True)
     save(fig, "figure_storage_1d_operators.pdf")
 
 
-def first_run_behavior() -> pd.DataFrame:
+def behavior_data() -> tuple[pd.DataFrame, pd.DataFrame]:
     full = pd.read_csv(RAW / "full_results.csv")
-    data = full.loc[
+    proposed = full.loc[
         full["run_id"].eq(1) & full["safety_category"].eq("behavior")
     ].copy()
-    data["class"] = data["mutation_operator"].map(BEHAVIOR_GROUP)
-    return data
-
-
-def behavior_evidence_profile() -> None:
-    ug = first_run_behavior()
+    proposed["semantic_class"] = proposed["mutation_operator"].map(BEHAVIOR_GROUP)
     fuzz = pd.read_csv(RAW / "fuzz_baseline.csv")
     fuzz = fuzz.loc[fuzz["safety_category"].eq("behavior")].copy()
-    fuzz["class"] = fuzz["mutation_operator"].map(BEHAVIOR_GROUP)
-    records = []
-    for _, row in ug.iterrows():
-        result = json.loads(row["behavior_results"])
-        outcome = result[0]["verdict"] if result else row["verdict"]
-        records.extend(
+    fuzz["semantic_class"] = fuzz["mutation_operator"].map(BEHAVIOR_GROUP)
+    return proposed, fuzz
+
+
+def panel_2a_behavior_outcome_profile() -> None:
+    proposed, fuzz = behavior_data()
+    fig, ax = plt.subplots(figsize=(6.4, 6.4))
+    x = np.arange(3)
+    colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
+    for idx, semantic_class in enumerate(BEHAVIOR_ORDER):
+        part = proposed.loc[proposed["semantic_class"].eq(semantic_class)]
+        total = len(part)
+        profile = np.asarray(
             [
-                {"class": row["class"], "series": "UG-CEx", "value": outcome == "Unsafe"},
-                {"class": row["class"], "series": "UG-Proof", "value": outcome == "Safe"},
-                {"class": row["class"], "series": "UG-Unk.", "value": outcome == "Unknown"},
+                (int(part["verdict"].eq("Unsafe").sum()) + 0.5) / (total + 1),
+                (int(part["verdict"].eq("Safe").sum()) + 0.5) / (total + 1),
+                (int(part["verdict"].eq("Unknown").sum()) + 0.5) / (total + 1),
             ]
         )
-    for _, row in fuzz.iterrows():
-        records.extend(
-            [
-                {"class": row["class"], "series": "Fuzz-CEx", "value": row["verdict"] == "Unsafe"},
-                {"class": row["class"], "series": "Fuzz-Miss", "value": row["verdict"] != "Unsafe"},
-            ]
-        )
-    counts = (
-        pd.DataFrame(records)
-        .groupby(["class", "series"])["value"]
-        .sum()
-        .unstack(fill_value=0)
-        .reindex(BEHAVIOR_ORDER)
-    )
-    series = ["UG-CEx", "Fuzz-CEx", "UG-Proof", "UG-Unk.", "Fuzz-Miss"]
-    fig, ax = plt.subplots(figsize=(7.4, 5.4))
-    x = np.arange(len(BEHAVIOR_ORDER))
-    for index, label in enumerate(series):
         ax.plot(
             x,
-            counts[label],
-            label=label,
-            linestyle=LINE_STYLES[index],
-            marker=MARKERS[index],
+            profile,
+            color=colors[idx],
+            marker=["o", "s", "^", "D"][idx],
+            markersize=7.5,
+            markeredgecolor="black",
+            markeredgewidth=0.45,
+            linewidth=2.0,
+            label=semantic_class,
         )
-    ax.set_xticks(x, BEHAVIOR_ORDER)
-    ax.set_ylim(-0.6, max(21, float(counts.max().max()) + 2))
-    finish(
-        ax,
-        xlabel="Program-change category",
-        ylabel="Observed cases",
-        legend_cols=2,
-        legend_loc="upper right",
+    ax.set_xticks(x, ["Detected", "Missed", "Unknown"])
+    ax.set_ylim(0.01, 1.02)
+    axes_style(ax, "Analyzer outcome", "Jeffreys outcome estimate")
+    ax.legend(loc="center right", bbox_to_anchor=(0.99, 0.43), frameon=True)
+
+    inset = ax.inset_axes([0.57, 0.55, 0.38, 0.34])
+    aggregate = [
+        int(proposed["verdict"].eq("Unsafe").sum()),
+        int(fuzz["verdict"].eq("Unsafe").sum()),
+    ]
+    inset.bar(
+        [0, 1],
+        aggregate,
+        color=colors[:2],
+        edgecolor="black",
+        linewidth=0.45,
     )
+    inset.set_xticks([0, 1], ["Prop.", "Fuzz"])
+    inset.set_title("Aggregate detections", fontsize=11)
+    inset.set_ylim(0, max(aggregate) + 8)
+    inset.tick_params(labelsize=10)
+    inset.grid(axis="y", linestyle=":", alpha=0.25)
+    inset.set_axisbelow(True)
     save(fig, "figure_behavior_2a_profile.pdf")
 
 
-def behavior_stage_latency() -> None:
+def panel_2b_behavior_latency_kde() -> None:
     full = pd.read_csv(RAW / "full_results.csv")
-    data = full.loc[full["safety_category"].eq("behavior")].copy()
-    data["class"] = data["mutation_operator"].map(BEHAVIOR_GROUP)
-    stages = [
-        ("artifact_extraction_ms", "Artifact"),
-        ("storage_analysis_ms", "Layout"),
-        ("function_mapping_ms", "Mapping"),
-        ("product_program_ms", "Product"),
-        ("total_runtime_ms", "Total"),
+    full = full.loc[full["safety_category"].eq("behavior")].copy()
+    full["semantic_class"] = full["mutation_operator"].map(BEHAVIOR_GROUP)
+    values = [
+        full.loc[full["semantic_class"].eq(label), "total_runtime_ms"].to_numpy()
+        for label in BEHAVIOR_ORDER
     ]
-    timing = data.groupby("class")[[item[0] for item in stages]].median().reindex(BEHAVIOR_ORDER)
-    fig, ax = plt.subplots(figsize=(7.4, 5.4))
-    x = np.arange(len(BEHAVIOR_ORDER))
-    for index, (column, label) in enumerate(stages):
+    fig, ax = plt.subplots(figsize=(6.4, 6.4))
+    colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
+    for idx, (label, series) in enumerate(zip(BEHAVIOR_ORDER, values)):
+        series = np.asarray(series, dtype=float)
+        grid = np.linspace(series.min(), series.max(), 260)
+        density = gaussian_kde(series, bw_method="scott")(grid)
         ax.plot(
-            x,
-            timing[column],
+            grid,
+            density,
+            color=colors[idx],
+            marker=["o", "s", "^", "D"][idx],
+            markevery=46,
+            markersize=5.0,
+            linewidth=1.75,
             label=label,
-            linestyle=LINE_STYLES[index],
-            marker=MARKERS[index],
         )
-    ax.set_xticks(x, BEHAVIOR_ORDER)
-    ax.set_yscale("log")
-    finish(
-        ax,
-        xlabel="Semantic category",
-        ylabel="Median latency (ms, log scale)",
-        legend_cols=2,
-        legend_loc="center right",
-    )
+        ax.fill_between(grid, density, color=colors[idx], alpha=0.045)
+    axes_style(ax, "Verification latency (ms)", "Kernel density")
+    ax.grid(axis="x", linestyle=":", alpha=0.3)
+    ax.legend(loc="upper right", frameon=True)
     save(fig, "figure_behavior_2b_latency.pdf")
 
 
-def behavior_replay() -> None:
+def panel_2c_replay_quantiles() -> None:
     replay = pd.read_csv(RAW / "evm_replay.csv")
     with (ROOT / "dataset" / "metadata" / "pairs.csv").open(
         encoding="utf-8", newline=""
@@ -394,68 +456,124 @@ def behavior_replay() -> None:
         operators = {
             row["pair_id"]: row["mutation_operator"] for row in csv.DictReader(handle)
         }
-    replay["class"] = replay["pair_id"].map(
+    replay["semantic_class"] = replay["pair_id"].map(
         lambda pair_id: BEHAVIOR_GROUP[operators[pair_id]]
     )
-    stats = replay.groupby("class")["runtime_ms"].agg(
-        Q1=lambda values: float(np.percentile(values, 25)),
-        Median="median",
-        Mean="mean",
-        Q3=lambda values: float(np.percentile(values, 75)),
-        p95=lambda values: float(np.percentile(values, 95)),
-    ).reindex(BEHAVIOR_ORDER)
-    fig, ax = plt.subplots(figsize=(7.4, 5.4))
-    x = np.arange(len(BEHAVIOR_ORDER))
-    for index, label in enumerate(["Q1", "Median", "Mean", "Q3", "p95"]):
+    values = [
+        replay.loc[replay["semantic_class"].eq(label), "runtime_ms"].to_numpy()
+        for label in BEHAVIOR_ORDER
+    ]
+    fig, ax = plt.subplots(figsize=(6.4, 6.4))
+    colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
+    quantiles = np.linspace(0.05, 0.95, 19)
+    for idx, (label, series) in enumerate(zip(BEHAVIOR_ORDER, values)):
+        latency = np.quantile(np.asarray(series, dtype=float), quantiles)
         ax.plot(
-            x,
-            stats[label],
+            quantiles,
+            latency,
+            color=colors[idx],
+            marker=["o", "s", "^", "D"][idx],
+            markevery=3,
+            markersize=5.5,
+            linewidth=1.75,
             label=label,
-            linestyle=LINE_STYLES[index],
-            marker=MARKERS[index],
         )
-    ax.set_xticks(x, BEHAVIOR_ORDER)
-    finish(
-        ax,
-        xlabel="Counterexample category",
-        ylabel="Anvil replay latency (ms)",
-        legend_cols=3,
-        legend_loc="upper left",
-    )
+    axes_style(ax, "Empirical quantile", "Anvil replay latency (ms)")
+    ax.set_xlim(0.04, 0.96)
+    ax.legend(loc="upper left", frameon=True)
     save(fig, "figure_behavior_2c_replay.pdf")
 
 
-def fuzz_budget_latency() -> None:
-    data = pd.read_csv(RAW / "fuzz_budget_sweep.csv")
-    data = data.loc[data["safety_category"].eq("behavior")].copy()
-    data["class"] = data["mutation_operator"].map(BEHAVIOR_GROUP)
-    timing = (
-        data.groupby(["budget", "class"])["runtime_ms"]
-        .median()
-        .unstack()
-        .reindex(columns=BEHAVIOR_ORDER)
+def panel_2d_observable_upset() -> None:
+    """Show which observable dimensions jointly validate each counterexample."""
+    replay = pd.read_csv(RAW / "evm_replay.csv")
+    dimensions = [
+        ("status_or_return", "Return"),
+        ("transaction_status", "Tx status"),
+        ("events", "Events"),
+        ("storage", "Storage"),
+        ("external_trace", "Call trace"),
+    ]
+    parsed = replay["dimensions"].map(ast.literal_eval)
+    patterns = pd.DataFrame(
+        [{key: bool(row.get(key, False)) for key, _ in dimensions} for row in parsed]
     )
-    fig, ax = plt.subplots(figsize=(7.4, 5.4))
-    for index, label in enumerate(BEHAVIOR_ORDER):
-        ax.plot(
-            timing.index,
-            timing[label],
-            label=label,
-            linestyle=LINE_STYLES[index],
-            marker=MARKERS[index],
+    counts = (
+        patterns.value_counts(sort=True)
+        .rename("count")
+        .reset_index()
+        .sort_values("count", ascending=False, kind="stable")
+        .reset_index(drop=True)
+    )
+
+    fig = plt.figure(figsize=(6.4, 6.4))
+    grid = fig.add_gridspec(2, 1, height_ratios=[1.35, 1.0], hspace=0.04)
+    ax_count = fig.add_subplot(grid[0])
+    ax_matrix = fig.add_subplot(grid[1], sharex=ax_count)
+    x = np.arange(len(counts))
+    colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
+
+    bars = ax_count.bar(
+        x,
+        counts["count"],
+        width=0.68,
+        color=colors[0],
+        edgecolor="black",
+        linewidth=0.55,
+    )
+    ax_count.bar_label(bars, padding=3, fontsize=14)
+    ax_count.set_ylabel("Validated cases")
+    ax_count.grid(axis="y", linestyle=":", linewidth=0.9, alpha=0.3)
+    ax_count.set_axisbelow(True)
+    ax_count.tick_params(axis="x", bottom=False, labelbottom=False)
+    ax_count.spines["bottom"].set_visible(False)
+
+    for column in x:
+        active_rows = [
+            idx
+            for idx, (dimension_key, _dimension_label) in enumerate(dimensions)
+            if bool(counts.loc[column, dimension_key])
+        ]
+        if len(active_rows) > 1:
+            ax_matrix.plot(
+                [column, column],
+                [min(active_rows), max(active_rows)],
+                color="0.25",
+                linewidth=1.2,
+                zorder=1,
+            )
+    for row_idx, (key, _label) in enumerate(dimensions):
+        active = counts[key].to_numpy(dtype=bool)
+        ax_matrix.scatter(
+            x[~active],
+            np.full((~active).sum(), row_idx),
+            marker="s",
+            s=55,
+            facecolor="white",
+            edgecolor="0.72",
+            linewidth=0.8,
         )
-    ax.set_xticks(timing.index)
-    finish(
-        ax,
-        xlabel="Differential-fuzzing trial budget",
-        ylabel="Median baseline latency (ms)",
-        legend_cols=2,
-        legend_loc="upper left",
+        ax_matrix.scatter(
+            x[active],
+            np.full(active.sum(), row_idx),
+            marker="s",
+            s=72,
+            facecolor=colors[0],
+            edgecolor="black",
+            linewidth=0.45,
+        )
+    ax_matrix.set_yticks(
+        np.arange(len(dimensions)), [label for _key, label in dimensions]
     )
-    save(fig, "figure_behavior_2d_fuzz_budget.pdf")
+    ax_matrix.invert_yaxis()
+    ax_matrix.set_xticks(x, [f"C{i + 1}" for i in x])
+    ax_matrix.set_xlabel("Observable combination")
+    ax_matrix.grid(axis="y", linestyle=":", linewidth=0.8, alpha=0.25)
+    ax_matrix.spines["top"].set_visible(False)
+    save(fig, "figure_behavior_2d_observables.pdf")
 
 
-def ablation_metrics() -> None:
+def extra_ablation_bars() -> None:
     data = pd.read_csv(SUMMARY / "ablation_summary.csv")
     order = [
         "NameOnly",
@@ -466,140 +584,231 @@ def ablation_metrics() -> None:
         "NoSkipUnchanged",
         "Full",
     ]
-    labels = ["Name", "No beh.", "Slot/type", "No type", "No replay", "No skip", "Full"]
+    labels = ["ID-only", "No behavior", "Slot+type", "No type", "No replay", "No skip", "Proposed"]
     frame = data.set_index("variant").reindex(order)
     total = frame[["tp", "tn", "fp", "fn"]].sum(axis=1)
-    coverage = 1.0 - frame["unknown_rate"] - frame["timeout_rate"]
     metrics = pd.DataFrame(
         {
             "Accuracy": frame["accuracy"],
             "Precision": frame["precision"],
             "Recall": frame["recall"],
             "F1": frame["f1"],
-            "Coverage": (coverage * total + 0.5) / (total + 1),
+            "Coverage": (
+                (1 - frame["unknown_rate"] - frame["timeout_rate"]) * total + 0.5
+            )
+            / (total + 1),
         },
         index=order,
     )
-    fig, ax = plt.subplots(figsize=(10.2, 5.6))
-    x = np.arange(len(order))
-    for index, column in enumerate(metrics.columns):
-        ax.plot(
-            x,
-            metrics[column],
-            label=column,
-            linestyle=LINE_STYLES[index],
-            marker=MARKERS[index],
+    fig, ax = plt.subplots(figsize=(10.6, 6.2))
+    y = np.arange(len(order))
+    height = 0.15
+    colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
+    for idx, metric in enumerate(metrics.columns):
+        ax.barh(
+            y + (idx - 2) * height,
+            metrics[metric],
+            height,
+            label=metric,
+            color=colors[idx],
+            edgecolor="black",
+            linewidth=0.35,
         )
-    ax.set_xticks(x, labels, rotation=20, ha="right")
-    ax.set_ylim(0.35, 1.03)
-    finish(
-        ax,
-        xlabel="Analyzer configuration",
-        ylabel="Classification estimate",
-        legend_cols=3,
-        legend_loc="lower right",
-    )
+    ax.set_yticks(y, labels)
+    ax.invert_yaxis()
+    ax.set_xlim(0.35, 1.03)
+    axes_style(ax, "Classification estimate", "Analyzer configuration")
+    ax.grid(axis="x", linestyle=":", alpha=0.3)
+    ax.grid(axis="y", visible=False)
+    ax.legend(ncol=3, loc="lower right", frameon=True)
     save(fig, "figure_ablation_3a_metrics.pdf")
 
 
-def scaling_quantiles() -> None:
-    data = pd.read_csv(RAW / "scalability_results.csv")
-    stats = data.groupby("changed_preserved_functions")["verification_time_ms"].agg(
-        Q1=lambda values: float(np.percentile(values, 25)),
-        Median="median",
-        Q3=lambda values: float(np.percentile(values, 75)),
-        p95=lambda values: float(np.percentile(values, 95)),
-    )
-    fig, ax = plt.subplots(figsize=(7.4, 5.4))
-    for index, label in enumerate(["Q1", "Median", "Q3", "p95"]):
-        ax.plot(
-            stats.index,
-            stats[label],
-            label=label,
-            linestyle=LINE_STYLES[index],
-            marker=MARKERS[index],
+def extra_stage_composition() -> None:
+    perf = pd.read_csv(SUMMARY / "performance_summary.csv")
+    stages = [
+        ("artifact_extraction_ms", "Artifact"),
+        ("storage_analysis_ms", "Layout"),
+        ("function_mapping_ms", "Mapping"),
+        ("product_program_ms", "Product"),
+        ("counterexample_replay_ms", "Replay"),
+    ]
+    classes = ["safe", "storage", "behavior"]
+    fig, ax = plt.subplots(figsize=(7.6, 5.6))
+    x = np.arange(len(classes))
+    bottom = np.zeros(len(classes))
+    colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
+    for idx, (stage, label) in enumerate(stages):
+        values = (
+            perf.loc[perf["stage"].eq(stage)]
+            .set_index("experiment_group")
+            .reindex(classes)["median_ms"]
+            .to_numpy()
         )
-    ax.set_xticks(stats.index)
-    finish(
-        ax,
-        xlabel="Relational obligations",
-        ylabel="Batch verification latency (ms)",
-        legend_cols=2,
-        legend_loc="upper left",
-    )
-    save(fig, "figure_scaling_3b_quantiles.pdf")
+        ax.bar(
+            x,
+            values,
+            bottom=bottom,
+            label=label,
+            color=colors[idx],
+            edgecolor="white",
+            linewidth=0.6,
+        )
+        bottom += values
+    ax.set_xticks(x, ["Safe", "Storage", "Behavior"])
+    axes_style(ax, "Upgrade class", "Median stage composition (ms)")
+    ax.legend(ncol=2, loc="upper left", frameon=True)
+    save(fig, "figure_stage_3b_composition.pdf")
 
 
-def scalability_figure() -> None:
+def extra_runtime_distribution() -> None:
+    full = pd.read_csv(RAW / "full_results.csv")
+    classes = ["safe", "storage", "behavior"]
+    values = [
+        full.loc[full["safety_category"].eq(label), "total_runtime_ms"].to_numpy()
+        for label in classes
+    ]
+    fig, ax = plt.subplots(figsize=(7.6, 5.6))
+    colored_boxplot(ax, values, ["Safe", "Storage", "Behavior"], show_points=True, seed=53)
+    ax.set_yscale("log")
+    axes_style(ax, "Upgrade class", "End-to-end latency (ms, log scale)")
+    save(fig, "figure_runtime_3c_distribution.pdf")
+
+
+def scalability_obligations() -> None:
     data = pd.read_csv(RAW / "scalability_results.csv")
-    medians = (
-        data.groupby("changed_preserved_functions", as_index=False)[
-            "verification_time_ms"
-        ]
-        .median()
-        .rename(columns={"verification_time_ms": "median_ms"})
-    )
-    fig, axes = plt.subplots(1, 2, figsize=(14.6, 5.4))
-    axes[0].scatter(
+    grouped = data.groupby("changed_preserved_functions")["verification_time_ms"]
+    summary = grouped.agg(
+        median_ms="median",
+        q1=lambda values: values.quantile(0.25),
+        q3=lambda values: values.quantile(0.75),
+        p95=lambda values: values.quantile(0.95),
+    ).reset_index()
+    x = summary["changed_preserved_functions"].to_numpy()
+    fig, ax = plt.subplots(figsize=(8.0, 8.0))
+    ax.scatter(
         data["changed_preserved_functions"],
         data["verification_time_ms"],
-        alpha=0.25,
-        s=30,
+        alpha=0.12,
+        s=24,
+        color=mpl.rcParams["axes.prop_cycle"].by_key()["color"][0],
+        label="Measured runs",
     )
-    axes[0].plot(
-        medians["changed_preserved_functions"],
-        medians["median_ms"],
-        color="black",
+    ax.fill_between(
+        x,
+        summary["q1"].to_numpy(),
+        summary["q3"].to_numpy(),
+        color=mpl.rcParams["axes.prop_cycle"].by_key()["color"][0],
+        alpha=0.18,
+        label="Interquartile band",
+    )
+    ax.plot(
+        x,
+        summary["median_ms"],
+        color=mpl.rcParams["axes.prop_cycle"].by_key()["color"][0],
         marker="o",
         linewidth=2.2,
         label="Median",
     )
-    axes[0].set_xlabel("Relational obligations")
-    axes[0].set_ylabel("Verification latency (ms)")
-    axes[0].legend(frameon=True)
-    axes[0].grid(axis="y", linestyle=":", alpha=0.35)
-    axes[1].scatter(
+    ax.plot(
+        x,
+        summary["p95"],
+        color=mpl.rcParams["axes.prop_cycle"].by_key()["color"][1],
+        marker="s",
+        linestyle="--",
+        linewidth=1.8,
+        label="p95",
+    )
+    axes_style(ax, "Relational obligations", "Verification latency (ms)")
+    ax.legend(loc="upper left", frameon=True)
+
+    inset = ax.inset_axes([0.54, 0.17, 0.40, 0.32])
+    spread = summary["p95"] / summary["median_ms"]
+    inset.plot(x, spread, marker="D", linewidth=1.5, color=mpl.rcParams["axes.prop_cycle"].by_key()["color"][2])
+    inset.set_title("Tail / median", fontsize=12)
+    inset.set_xlabel("Obligations", fontsize=10)
+    inset.tick_params(labelsize=9)
+    inset.grid(linestyle=":", alpha=0.25)
+    save(fig, "figure_scalability_obligations.pdf")
+
+
+def scalability_paths() -> None:
+    data = pd.read_csv(RAW / "scalability_results.csv").sort_values(
+        "symbolic_path_count"
+    )
+    x = data["symbolic_path_count"].to_numpy(dtype=float)
+    y = data["verification_time_ms"].to_numpy(dtype=float)
+    slope, intercept = np.polyfit(x, y, 1)
+    bins = pd.qcut(data["symbolic_path_count"], q=10, duplicates="drop")
+    binned = (
+        data.assign(path_bin=bins)
+        .groupby("path_bin", observed=True)
+        .agg(
+            paths=("symbolic_path_count", "median"),
+            latency=("verification_time_ms", "median"),
+        )
+        .reset_index(drop=True)
+    )
+    fig, ax = plt.subplots(figsize=(8.0, 8.0))
+    ax.scatter(
         data["symbolic_path_count"],
         data["verification_time_ms"],
-        alpha=0.28,
-        s=30,
+        alpha=0.14,
+        s=24,
+        color=mpl.rcParams["axes.prop_cycle"].by_key()["color"][0],
+        label="Measured runs",
     )
-    axes[1].set_xlabel("Aggregate symbolic paths")
-    axes[1].set_ylabel("Verification latency (ms)")
-    axes[1].grid(axis="y", linestyle=":", alpha=0.35)
-    fig.tight_layout(pad=0.7)
-    fig.savefig(FIGURES / "figure_scalability.pdf", bbox_inches="tight")
-    plt.close(fig)
+    ax.plot(
+        binned["paths"],
+        binned["latency"],
+        color=mpl.rcParams["axes.prop_cycle"].by_key()["color"][1],
+        marker="s",
+        linewidth=2.2,
+        label="Decile medians",
+    )
+    ax.plot(
+        [x.min(), x.max()],
+        [intercept + slope * x.min(), intercept + slope * x.max()],
+        color="black",
+        linestyle="--",
+        linewidth=1.7,
+        label="OLS trend",
+    )
+    axes_style(ax, "Aggregate symbolic paths", "Verification latency (ms)")
+    ax.legend(loc="upper left", frameon=True)
+    save(fig, "figure_scalability_paths.pdf")
 
 
 def main() -> None:
     FIGURES.mkdir(parents=True, exist_ok=True)
     configure()
-    storage_profile()
-    storage_cumulative()
-    storage_latency()
-    storage_operator_detail()
-    behavior_evidence_profile()
-    behavior_stage_latency()
-    behavior_replay()
-    fuzz_budget_latency()
-    ablation_metrics()
-    scaling_quantiles()
-    scalability_figure()
+    panel_1a_storage_profile()
+    panel_1b_storage_metric_profile()
+    panel_1c_storage_latency_kde()
+    panel_1d_storage_evidence_profile()
+    panel_2a_behavior_outcome_profile()
+    panel_2b_behavior_latency_kde()
+    panel_2c_replay_quantiles()
+    panel_2d_observable_upset()
+    scalability_obligations()
+    scalability_paths()
     manifest = {
         "format": "independent vector PDF panels",
         "font_size_pt": 18,
-        "style": "Matplotlib default text/font/color cycle",
-        "assembly_note": "Panels are separate for later subfigure composition.",
-        "source_data": [
-            "dataset/results/raw/full_results.csv",
-            "dataset/results/raw/ablation_results.csv",
-            "dataset/results/raw/oz_baseline.csv",
-            "dataset/results/raw/fuzz_baseline.csv",
-            "dataset/results/raw/fuzz_budget_sweep.csv",
-            "dataset/results/raw/evm_replay.csv",
-            "dataset/results/raw/scalability_results.csv",
-        ],
+        "style": "Matplotlib default typography and color cycle",
+        "panel_types": {
+            "1a": "connected multi-method detection profile",
+            "1b": "connected multi-metric method profile",
+            "1c": "log-time Gaussian kernel density",
+            "1d": "connected evidence profile",
+            "2a": "connected detection profile with aggregate inset",
+            "2b": "Gaussian kernel density",
+            "2c": "connected replay quantile profile",
+            "2d": "UpSet-style observable combinations",
+            "3": "obligation scaling with interquartile band and inset",
+            "4": "symbolic-path scaling with binned medians and OLS trend",
+        },
+        "note": "No experimental value is cosmetically altered.",
         "figures": sorted(path.name for path in FIGURES.glob("*.pdf")),
     }
     (FIGURES / "manifest.json").write_text(
