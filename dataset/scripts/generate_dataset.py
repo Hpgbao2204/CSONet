@@ -359,9 +359,20 @@ def main() -> None:
                 **metrics,
             }
         )
+        safe_pool = [
+            operator
+            for operator in SAFE_OPERATORS
+            if operator != "consume_storage_gap" or spec.use_gap
+        ]
+        storage_pool = [
+            operator
+            for operator in STORAGE_OPERATORS
+            if (operator != "expand_storage_gap" or spec.use_gap)
+            and (operator != "move_dynamic_array_root" or not spec.use_gap)
+        ]
         categories = [
-            ("safe", choose_ops(SAFE_OPERATORS, index)),
-            ("unsafe_storage", choose_ops(STORAGE_OPERATORS, index)),
+            ("safe", choose_ops(safe_pool, index)),
+            ("unsafe_storage", choose_ops(storage_pool, index)),
             ("unsafe_behavior", choose_ops(BEHAVIOR_OPERATORS, index)),
         ]
         for category, operators in categories:
@@ -450,4 +461,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
