@@ -227,11 +227,7 @@ where \(\mathsf{Compat}_{\mathcal{L}}\) abbreviates Eq.~\eqref{eq:layout-compati
 
 \begin{figure}[t]
 \centering
-\IfFileExists{figures/CSO-Net_cropped.pdf}{%
-\includegraphics[width=\linewidth]{figures/CSO-Net_cropped.pdf}%
-}{%
-\fbox{\parbox[c][34mm][c]{0.94\linewidth}{\centering Architecture artwork will be inserted here.}}%
-}
+\includegraphics[width=\linewidth]{figure/CSO-Net_cropped.pdf}
 \caption{High-level architecture and verification workflow of \tool.}
 \label{fig:architecture}
 \end{figure}
@@ -258,7 +254,8 @@ Let \(\nu_i(v)\) be the compiler label.  The prototype uses \(\rho_N(v)=u\) iff 
 \Longleftrightarrow{}&
 \operatorname{Dom}(\rho_N)=P_1\\
 &{}\land
-\sum_{v\in P_1}\|\boldsymbol{\ell}(v,\rho_N(v))\|_1=0.
+\sum_{v\in\operatorname{Dom}(\rho_N)}
+\|\boldsymbol{\ell}(v,\rho_N(v))\|_1=0.
 \end{aligned}
 \label{eq:layout-diagnostic}
 \end{equation}
@@ -358,7 +355,7 @@ function withdraw(uint128 amount,
 \label{fig:example}
 \end{figure}
 
-Figure~\ref{fig:example} illustrates why upgrade safety cannot be reduced to either layout equality or equal post-state on common successful inputs.  Let \(s_i\) be the compiler-reported root of \texttt{accounts}.  For address \(x\) and field offset \(\delta_i\), the persistent cell is \(\alpha_i(x)=H(\operatorname{enc}(x)\Vert\operatorname{enc}(s_i))+\delta_i\); L1--L3 imply \((s_1,\delta_1,\tau_1)\neq(s_2,\delta_2,\tau_2)\).  Independently, choose the relational pre-state
+Figure~\ref{fig:example} illustrates why upgrade safety cannot be reduced to either layout equality or equal post-state on common successful inputs.  Let \(s_i\) be the compiler-reported root of \texttt{accounts}.  Let \(\delta_i\) denote the compiler-derived field location within the mapping value, including its slot and byte offset.  For address \(x\), the persistent cell is \(\alpha_i(x)=H(\operatorname{enc}(x)\Vert\operatorname{enc}(s_i))+\delta_i\); L1--L3 imply \((s_1,\delta_1,\tau_1)\neq(s_2,\delta_2,\tau_2)\).  Independently, choose the relational pre-state
 \begin{equation}
 \begin{aligned}
 a.\mathit{credit}&=\mathit{amount}>0,&
@@ -439,47 +436,47 @@ After three warmups, the full pipeline and seven ablations are each measured 30 
 \centering
 \begin{minipage}[t]{0.238\textwidth}
 \centering
-\includegraphics[width=\linewidth]{dataset/results/figure-new/figure_storage_1a_profile.pdf}\\[-1mm]
+\includegraphics[width=\linewidth]{figure/figure_storage_1a_profile.pdf}\\[-1mm]
 \scriptsize (a) Storage detection
 \end{minipage}\hfill
 \begin{minipage}[t]{0.238\textwidth}
 \centering
-\includegraphics[width=\linewidth]{dataset/results/figure-new/figure_storage_1b_cumulative.pdf}\\[-1mm]
+\includegraphics[width=\linewidth]{figure/figure_storage_1b_cumulative.pdf}\\[-1mm]
 \scriptsize (b) Ablation profile
 \end{minipage}\hfill
 \begin{minipage}[t]{0.238\textwidth}
 \centering
-\includegraphics[width=\linewidth]{dataset/results/figure-new/figure_storage_1c_sensitivity.pdf}\\[-1mm]
+\includegraphics[width=\linewidth]{figure/figure_storage_1c_sensitivity.pdf}\\[-1mm]
 \scriptsize (c) Layout latency
 \end{minipage}\hfill
 \begin{minipage}[t]{0.238\textwidth}
 \centering
-\includegraphics[width=\linewidth]{dataset/results/figure-new/figure_storage_1d_operators.pdf}\\[-1mm]
+\includegraphics[width=\linewidth]{figure/figure_storage_1d_operators.pdf}\\[-1mm]
 \scriptsize (d) Storage evidence
 \end{minipage}
 
 \smallskip
 \begin{minipage}[t]{0.238\textwidth}
 \centering
-\includegraphics[width=\linewidth]{dataset/results/figure-new/figure_behavior_2a_profile.pdf}\\[-1mm]
+\includegraphics[width=\linewidth]{figure/figure_behavior_2a_profile.pdf}\\[-1mm]
 \scriptsize (e) Outcome profile
 \end{minipage}\hfill
 \begin{minipage}[t]{0.238\textwidth}
 \centering
-\includegraphics[width=\linewidth]{dataset/results/figure-new/figure_behavior_2b_latency.pdf}\\[-1mm]
+\includegraphics[width=\linewidth]{figure/figure_behavior_2b_latency.pdf}\\[-1mm]
 \scriptsize (f) Verification density
 \end{minipage}\hfill
 \begin{minipage}[t]{0.238\textwidth}
 \centering
-\includegraphics[width=\linewidth]{dataset/results/figure-new/figure_behavior_2c_replay.pdf}\\[-1mm]
+\includegraphics[width=\linewidth]{figure/figure_behavior_2c_replay.pdf}\\[-1mm]
 \scriptsize (g) Replay quantiles
 \end{minipage}\hfill
 \begin{minipage}[t]{0.238\textwidth}
 \centering
-\includegraphics[width=\linewidth]{dataset/results/figure-new/figure_behavior_2d_observables.pdf}\\[-1mm]
+\includegraphics[width=\linewidth]{figure/figure_behavior_2d_observables.pdf}\\[-1mm]
 \scriptsize (h) Evidence profiles
 \end{minipage}
-\caption{Detection and validation results.  The first row reports (a) posterior storage-family detection, (b) five-configuration ablation across classification criteria, (c) layout-analysis latency, and (d) storage evidence.  The second row reports (e) UG detection, fuzz detection, and UG \(\Unknown\) estimates by semantic class with Jeffreys 95\% bands, (f) verification density, (g) Anvil replay quantiles, and (h) posterior EVM-evidence support.  After hardening, the behavioral run contains 12 \(\Unknown\) verdicts and no timeout; panel (e) reports them separately, while evidence-support curves condition on validated witnesses. Legends abbreviate the proposed method as UG, identifier matching as ID, slot--offset--type matching as S+T, removal of type checking as \(-\tau\), and OpenZeppelin as OZ.  S+T and OZ coincide in panel (a).}
+\caption{Detection and validation results.  The first row reports (a) posterior storage-family detection, (b) five-configuration ablation across classification criteria, (c) layout-analysis latency, and (d) storage evidence.  The second row reports (e) behavioral outcomes, (f) verification density, (g) Anvil replay quantiles, and (h) posterior EVM-evidence support.  After hardening, the behavioral run contains 12 \(\Unknown\) verdicts and no timeout; panel (e) reports them separately, while evidence-support curves condition on validated witnesses. Legends abbreviate the proposed method as UG, identifier matching as ID, slot--offset--type matching as S+T, removal of type checking as \(-\tau\), and OpenZeppelin as OZ.  S+T and OZ coincide in panel (a).}
 \label{fig:effectiveness}
 \end{figure*}
 
@@ -501,7 +498,7 @@ where \(m\) indexes the analyzer configuration, \(K\) is a Gaussian kernel, and 
 
 \subsection{RQ2: behavioral equivalence}
 
-The audited revision detected 48/60 behavioral regressions, produced nine incorrect-safe outcomes, and returned three \(\Unknown\) verdicts.  Conservative hardening preserves the 48 detections while converting those nine outcomes to \(\Unknown\), so the current artifact reports 12 \(\Unknown\) verdicts and no incorrect-safe outcome or timeout.  Raw recall remains 0.800 and exceeds the deterministic differential baseline's 0.733.  Arithmetic mutations account for the four additional detections in Fig.~\ref{fig:effectiveness}(e), while the three hash-based returns remain explicitly unsupported.
+The hardened analyzer detected 48/60 behavioral regressions and returned \(\Unknown\) for the remaining 12 cases, with no incorrect-safe outcome or timeout.  Raw recall remains 0.800 and exceeds the deterministic differential baseline's 0.733.  Arithmetic mutations account for the four additional detections in Fig.~\ref{fig:effectiveness}(e), while the three hash-based returns remain explicitly unsupported.
 
 All 48 SMT witnesses were reproduced on Anvil, with a two-sided Wilson 95\% lower endpoint of 0.926 and median Anvil replay latency 808.98\,ms.  This is distinct from analyzer latency and the in-process summary-validation latency.  Panel (h) summarizes each witness by the binary evidence vector
 \begin{equation}
@@ -528,24 +525,24 @@ where \(n_{c,j}\) counts validated witnesses exhibiting channel \(j\). Its five 
 \centering
 \begin{minipage}[t]{0.322\textwidth}
 \centering
-\includegraphics[width=\linewidth]{dataset/results/figure-new/figure_diagnostics_3a_quality.pdf}\\[-1mm]
+\includegraphics[width=\linewidth]{figure/figure_diagnostics_3a_quality.pdf}\\[-1mm]
 \scriptsize (a) Precision, recall, and \(F_1\)
 \end{minipage}\hfill
 \begin{minipage}[t]{0.322\textwidth}
 \centering
-\includegraphics[width=\linewidth]{dataset/results/figure-new/figure_diagnostics_3b_decision.pdf}\\[-1mm]
+\includegraphics[width=\linewidth]{figure/figure_diagnostics_3b_decision.pdf}\\[-1mm]
 \scriptsize (b) Accuracy and coverage
 \end{minipage}\hfill
 \begin{minipage}[t]{0.322\textwidth}
 \centering
-\includegraphics[width=\linewidth]{dataset/results/figure-new/figure_diagnostics_3c_runtime.pdf}\\[-1mm]
+\includegraphics[width=\linewidth]{figure/figure_diagnostics_3c_runtime.pdf}\\[-1mm]
 \scriptsize (c) Median and tail latency
 \end{minipage}
-\caption{Component ablation with a shared configuration order and plotting grammar.  Panel (a) connects precision, recall, and \(F_1\), with shading spanning their local range. Panel (b) contrasts accuracy, coverage, and accuracy conditional on definite verdicts; its band exposes the accuracy--coverage decision gap. Panel (c) combines median and p95 latency, an IQR band, and the p95/median tail-inflation ratio on the right axis; compilation and Anvil replay are excluded. Classification curves use Jeffreys estimates, whereas timing layers use raw empirical quantiles.}
+\caption{Component ablation with a shared configuration order and plotting grammar.  Panels (a)--(b) report the primary classification metrics and decided-case accuracy.  Panel (c) contrasts median with p95 analyzer latency; compilation and Anvil replay are not included.  Curves connect Jeffreys estimates or measured timing summaries; raw classification metrics remain in the text and CSV.}
 \label{fig:diagnostics}
 \end{figure*}
 
-The full configuration has raw precision 0.936, recall 0.850, \(F_1=0.891\), accuracy 0.700, and decision coverage 0.739.  Removing behavioral reasoning lowers recall to 0.450, while identifier-only layout matching reaches 0.483; Fig.~\ref{fig:diagnostics}(a) shows that the loss is primarily sensitivity rather than precision.  Slot--offset--type matching retains strong precision but reaches recall 0.750 because it cannot recover assembly evidence.  Figure~\ref{fig:diagnostics}(b) separates overall accuracy from correctness conditional on a definite verdict: analyzing all functions preserves the main detection metrics but lowers coverage to 0.606 by moving otherwise skippable inputs to \(\Unknown\).
+The full configuration has raw precision 0.936, recall 0.850, \(F_1=0.891\), accuracy 0.700, and decision coverage 0.739.  Removing behavioral reasoning lowers recall to 0.450, while identifier-only layout matching reaches 0.483; Fig.~\ref{fig:diagnostics}(a) shows that the loss is primarily sensitivity rather than precision.  Slot--offset--type matching retains strong precision but reaches recall 0.750 because it cannot recover assembly evidence.  Figure~\ref{fig:diagnostics}(b) exposes a different failure: analyzing all functions preserves the main detection metrics but lowers coverage to 0.606 by moving otherwise skippable inputs to \(\Unknown\).
 
 The latency profile in Fig.~\ref{fig:diagnostics}(c) separates central tendency from tail cost.  Analyzer latency includes artifact loading, layout checking, mapping, product construction, solving, and in-process summary validation, but excludes compilation and Anvil replay.  The full configuration records median 1.25\,ms and p95 19.75\,ms.  Disabling summary validation gives 1.55\,ms and 22.72\,ms, indicating that its sub-millisecond work is smaller than run-to-run variation; disabling behavioral reasoning leaves a similar 1.27\,ms median but collapses p95 to 1.77\,ms by removing solver-heavy cases.
 
@@ -555,12 +552,12 @@ The latency profile in Fig.~\ref{fig:diagnostics}(c) separates central tendency 
 \centering
 \begin{minipage}[t]{0.485\textwidth}
 \centering
-\includegraphics[width=\linewidth]{dataset/results/figure-new/figure_scalability_obligations.pdf}\\[-1mm]
+\includegraphics[width=\linewidth]{figure/figure_scalability_obligations.pdf}\\[-1mm]
 \scriptsize (a) Relational obligations
 \end{minipage}\hfill
 \begin{minipage}[t]{0.485\textwidth}
 \centering
-\includegraphics[width=\linewidth]{dataset/results/figure-new/figure_scalability_paths.pdf}\\[-1mm]
+\includegraphics[width=\linewidth]{figure/figure_scalability_paths.pdf}\\[-1mm]
 \scriptsize (b) Symbolic-path mass
 \end{minipage}
 \caption{Scalability under controlled relational batches.  Panel (a) retains all runs, the interquartile band, median, p95, and an inset tail ratio. Panel (b) overlays decile medians and the OLS trend on all path-count observations.}
@@ -582,14 +579,14 @@ where \(o_i\) and \(p_i\) denote obligations and aggregate symbolic paths. The r
 
 The experiment exposes two distinct conservatism choices.  Layout name matching rejects a physically safe internal rename, producing seven false alarms.  Removing names entirely is not sufficient, because two declarations can share width and position but differ in interpretation.  A robust successor should infer correspondence from qualified declaration identity, access patterns, and user-confirmable matches.
 
-The nine incorrect-safe outcomes in RQ2 arose because conditional state updates, conditional events, and changed revert payloads disappeared during summary canonicalization.  The hardened artifact now blocks those cases as \(\Unknown\), and its regression suite checks that none can again become \(\Safe\).  We retain the audited RQ2 numbers rather than retroactively replacing measured results; a future control-flow-sensitive encoding is required before these cases can receive definite verdicts.
+An earlier audited revision produced nine incorrect-safe outcomes because conditional state updates, conditional events, and changed revert payloads disappeared during summary canonicalization.  The hardened artifact now blocks those cases as \(\Unknown\), and its regression suite checks that none can again become \(\Safe\).  A future control-flow-sensitive encoding is required before these cases can receive definite verdicts.
 
 The artifact separates three evidence levels: a compiler-grounded structural diagnosis, an SMT witness checked by an independent interpreter, and an actual EVM replay.  This separation is useful operationally.  A developer can inspect the exact byte footprint for a layout issue or replay a behavioral witness, while an \(\Unknown\) remains an explicit review obligation.
 
 \section{Threats to Validity}
 \label{sec:threats}
 
-\textbf{Construct validity.} Mutation labels represent controlled hazards, not incident frequency. The deterministic fuzzer is a bounded baseline and is not Forge's built-in fuzzer.  Every positive verdict means ``Safe within the encoded model,'' not unconditional Solidity safety.
+\textbf{Construct validity.} Mutation labels represent controlled hazards, not incident frequency. The deterministic fuzzer is a bounded baseline and is not Forge's built-in fuzzer.  Every \(\Safe\) verdict means ``Safe within the encoded model,'' not unconditional Solidity safety.
 
 \textbf{Internal validity.} The generator, detector, and evaluator share a repository, but ground-truth validation does not call the proposed detector.  Compiler success, mutation realization, artifact completeness, and duplicate hashes are checked separately.  Anvil replay adds independent bytecode-level evidence for counterexamples, although it does not validate proofs.
 
