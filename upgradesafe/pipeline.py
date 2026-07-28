@@ -1,16 +1,20 @@
-"""End-to-end pair analysis with per-stage profiling."""
+"""Staged pair analysis with per-stage profiling."""
 
 from __future__ import annotations
 
 import json
+import hashlib
+import re
 import time
 from dataclasses import dataclass, asdict
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import psutil
 
 from .behavior import (
+    EquivalenceResult,
     check_equivalence,
     differential_fuzz,
     extract_functions,
@@ -32,6 +36,41 @@ class AnalysisOptions:
 
 def _now() -> int:
     return time.perf_counter_ns()
+
+
+def _normalized(text: str) -> str:
+    return re.sub(r"\s+", "", text)
+
+
+@lru_cache(maxsize=4096)
+def _dependency_surface(source: str, entry_name: str) -> str:
+    """Fingerprint everything an unchanged external method may depend on.
+
+    The candidate body and unrelated function bodies are masked. Bodies in its
+    transitive syntactic call closure are retained, including public methods
+    called internally. Modifiers, inheritance, and contract-level declarations
+    stay outside those masks.
+    """
+
+    functions = extract_functions(source)
+    dependencies: set[str] = set()
+    pending = [entry_name]
+    while pending:
+        caller = pending.pop()
+        if caller not in functions:
+            continue
+        calls = set(re.findall(r"\b([A-Za-z_]\w*)\s*\(", functions[caller].body))
+        for callee in calls & set(functions):
+            if callee != entry_name and callee not in dependencies:
+                dependencies.add(callee)
+                pending.append(callee)
+    surface = source
+    for function in sorted(functions.values(), key=lambda item: len(item.body), reverse=True):
+        if function.name == entry_name or function.name not in dependencies:
+            needle = function.signature + "{" + function.body + "}"
+            replacement = function.signature + f"{{<masked:{function.name}>}}"
+            surface = surface.replace(needle, replacement, 1)
+    return hashlib.sha256(_normalized(surface).encode()).hexdigest()
 
 
 def analyze_pair(
@@ -68,7 +107,18 @@ def analyze_pair(
         if "".join(v1_functions[name].body.split()) != "".join(v2_functions[name].body.split())
         or "".join(v1_functions[name].signature.split()) != "".join(v2_functions[name].signature.split())
     ]
-    mapped = syntactically_changed if options.skip_unchanged else common
+    dependency_changed = {
+        name
+        for name in common
+        if name not in syntactically_changed
+        and _dependency_surface(v1_source, name)
+        != _dependency_surface(v2_source, name)
+    }
+    mapped = (
+        sorted(set(syntactically_changed) | dependency_changed)
+        if options.skip_unchanged
+        else common
+    )
     mapping_ms = (_now() - started) / 1e6
 
     behavior_ms = 0.0
@@ -77,11 +127,27 @@ def analyze_pair(
     if options.behavior and layout_safe:
         for name in mapped:
             started = _now()
-            result = check_equivalence(
-                v1_functions[name],
-                v2_functions[name],
-                timeout_ms=options.solver_timeout_ms,
-            )
+            if name in dependency_changed:
+                result = EquivalenceResult(
+                    verdict="Unknown",
+                    reason=(
+                        "method text is unchanged but a modifier, internal/public "
+                        "callee, inheritance clause, or contract dependency changed"
+                    ),
+                    runtime_ms=0.0,
+                    solver_variables=0,
+                    solver_constraints=0,
+                    symbolic_paths=0,
+                    counterexample=None,
+                    summary_v1="",
+                    summary_v2="",
+                )
+            else:
+                result = check_equivalence(
+                    v1_functions[name],
+                    v2_functions[name],
+                    timeout_ms=options.solver_timeout_ms,
+                )
             behavior_ms += (_now() - started) / 1e6
             item = {"function": name, **result_as_dict(result)}
             behavior_results.append(item)
@@ -128,7 +194,7 @@ def analyze_pair(
         verdict = behavior_verdict
         reason = (
             next((item["reason"] for item in behavior_results if item["verdict"] == verdict), "")
-            or "no changed preserved function"
+            or "no changed preserved function and all dependency surfaces are unchanged"
         )
 
     peak_memory_mb = psutil.Process().memory_info().rss / (1024 * 1024)
