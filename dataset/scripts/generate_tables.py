@@ -110,20 +110,27 @@ Method & Precision & Recall & F1 & FPR & Unknown & Timeout \\
 def performance_table() -> None:
     frame = pd.read_csv(SUMMARY / "performance_summary.csv")
     frame = frame.loc[frame["stage"].eq("total_runtime_ms")]
+    raw = pd.read_csv(DATASET / "results" / "raw" / "full_results.csv")
     lines = []
     for _, row in frame.iterrows():
+        total = int(raw["safety_category"].eq(row["experiment_group"]).sum())
+        constraints = (
+            f"{row['solver_constraints_median']:.0f}"
+            if row["solver_constraints_median"] > 0
+            else "--"
+        )
         lines.append(
             f"{esc(row['experiment_group'])} & {row['median_ms']:.3f} & "
             f"{row['iqr_ms']:.3f} & {row['p95_ms']:.3f} & "
-            f"{row['peak_memory_mb']:.1f} & {row['solver_constraints_median']:.0f} & "
-            f"{int(row['timeout_count'])} \\\\"
+            f"{row['peak_memory_mb']:.1f} & {constraints} & "
+            f"{bounded(row['timeout_count'] / total, int(row['timeout_count']), total)} \\\\"
         )
     write(
         "table_performance.tex",
         r"""
 \begin{tabular}{lrrrrrr}
 \toprule
-Group & Median (ms) & IQR (ms) & p95 (ms) & Peak MB & Constraints & TO \\
+Group & Median (ms) & IQR (ms) & p95 (ms) & Peak MB & Constraints & TO rate \\
 \midrule
 """
         + "\n".join(lines)

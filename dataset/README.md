@@ -66,6 +66,15 @@ NoReplay, NoSkipUnchanged
 one through ten relational obligations. This is a controlled workload study,
 not a claim that one V2 contains ten independent mutations.
 
+`results/raw/fuzz_budget_sweep.csv` contains 480 observations for deterministic
+trial budgets 16, 32, 64, and 128. It supports the category-level baseline
+latency panel without recomputing values inside the plotting script.
+
+The figure generator emits eleven independent vector PDF panels. Ten panels
+use four or five measured series and 18-point Matplotlib-default typography;
+`figure_scalability.pdf` retains its accepted two-panel scatter design. Files
+remain separate so the paper author can assemble subfigures in Overleaf.
+
 ## Statistical protocol
 
 The runner performs three warm-up passes and thirty measured passes. It reports
@@ -75,7 +84,6 @@ Plots read only checked-in CSV files.
 
 ## Compiler warnings
 
-Five behavior-unsafe `omit_state_update` variants intentionally leave the
+Four behavior-unsafe `omit_state_update` variants intentionally leave the
 computed local `next` unused. solc reports warnings, not errors; the warnings
 are retained in `results/raw/compile_result.json`.
-

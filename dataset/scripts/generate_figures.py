@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate independent publication-ready vector panels from saved CSVs."""
+"""Generate independent, data-dense vector panels from saved experiment CSVs."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 from scipy.stats import beta
 
 
@@ -34,13 +33,34 @@ STORAGE_GROUP = {
     "computed_assembly_slot_write": "Asm.",
 }
 STORAGE_ORDER = ["Decl.", "Types", "Roots", "Asm."]
+STORAGE_OPERATOR_ORDER = [
+    "reorder_state_variables",
+    "insert_state_variable",
+    "change_inheritance_order",
+    "change_storage_type",
+    "change_packed_width",
+    "move_mapping_root",
+    "move_dynamic_array_root",
+    "expand_storage_gap",
+    "inline_assembly_legacy_slot_write",
+    "namespace_collision",
+    "computed_assembly_slot_write",
+]
+STORAGE_OPERATOR_LABELS = [
+    "Reord.",
+    "Insert",
+    "Inherit.",
+    "Type",
+    "Pack",
+    "Map",
+    "Array",
+    "Gap",
+    "Asm-lit.",
+    "NS",
+    "Asm-comp.",
+]
 
 BEHAVIOR_GROUP = {
-    "rename_local_variable": "Refactor",
-    "equivalent_expression_refactor": "Refactor",
-    "extract_internal_function": "Refactor",
-    "commute_independent_writes": "Refactor",
-    "valid_domain_guard": "Refactor",
     "arithmetic_operator_change": "Arith.",
     "comparison_operator_change": "Arith.",
     "remove_require": "Arith.",
@@ -58,303 +78,315 @@ BEHAVIOR_GROUP = {
     "remove_access_modifier": "Access",
     "revert_data_change": "Access",
 }
-BEHAVIOR_UNSAFE_ORDER = ["Arith.", "State", "Events", "Access"]
-BEHAVIOR_ALL_ORDER = ["Refactor", *BEHAVIOR_UNSAFE_ORDER]
+BEHAVIOR_ORDER = ["Arith.", "State", "Events", "Access"]
+
+METHODS = [
+    ("Full", "Full"),
+    ("NameOnly", "Name"),
+    ("SlotOffsetType", "Slot/type"),
+    ("NoStorageType", "No type"),
+]
+LINE_STYLES = ["-", "--", "-.", ":", (0, (5, 2, 1, 2))]
+MARKERS = ["o", "s", "^", "D", "v"]
 
 
 def configure() -> None:
+    mpl.rcdefaults()
     mpl.rcParams.update(
         {
-            "font.family": "serif",
-            "font.size": 8.5,
-            "axes.labelsize": 9,
-            "axes.labelweight": "bold",
-            "axes.titlesize": 9,
-            "legend.fontsize": 7.5,
-            "xtick.labelsize": 7.5,
-            "ytick.labelsize": 7.5,
+            "font.size": 18,
+            "axes.labelsize": 18,
+            "axes.titlesize": 18,
+            "legend.fontsize": 15,
+            "xtick.labelsize": 16,
+            "ytick.labelsize": 16,
             "pdf.fonttype": 42,
             "ps.fonttype": 42,
-            "axes.spines.top": False,
-            "axes.spines.right": False,
+            "lines.linewidth": 2.4,
+            "lines.markersize": 8,
         }
     )
-    sns.set_palette("colorblind")
 
 
 def save(fig: plt.Figure, name: str) -> None:
-    fig.tight_layout(pad=0.5)
+    fig.tight_layout(pad=0.7)
     fig.savefig(FIGURES / name, bbox_inches="tight")
     plt.close(fig)
 
 
-def jeffreys(successes: pd.Series, totals: pd.Series) -> tuple[np.ndarray, ...]:
-    estimate = (successes + 0.5) / (totals + 1)
-    lower = beta.ppf(0.025, successes + 0.5, totals - successes + 0.5)
-    upper = beta.ppf(0.975, successes + 0.5, totals - successes + 0.5)
-    return (
-        np.asarray(estimate, dtype=float),
-        np.asarray(lower, dtype=float),
-        np.asarray(upper, dtype=float),
-    )
+def finish(
+    ax: plt.Axes,
+    *,
+    xlabel: str,
+    ylabel: str,
+    legend_cols: int = 2,
+    legend_loc: str = "best",
+) -> None:
+    ax.set_xlabel(xlabel, labelpad=13)
+    ax.set_ylabel(ylabel, labelpad=10)
+    ax.grid(axis="y", linestyle=":", linewidth=1.0, alpha=0.35)
+    ax.legend(frameon=True, ncol=legend_cols, loc=legend_loc)
 
 
-def storage_method_frame() -> pd.DataFrame:
-    full = pd.read_csv(RAW / "full_results.csv")
-    ug = full.loc[
-        full["run_id"].eq(1) & full["safety_category"].eq("storage")
-    ][["mutation_operator", "verdict"]].copy()
-    ug["method"] = "UG"
+def jeffreys(successes: pd.Series, totals: pd.Series) -> np.ndarray:
+    return np.asarray((successes + 0.5) / (totals + 1), dtype=float)
+
+
+def storage_method_data() -> pd.DataFrame:
+    ablation = pd.read_csv(RAW / "ablation_results.csv")
+    frames = []
+    for variant, label in METHODS:
+        part = ablation.loc[
+            ablation["run_id"].eq(1)
+            & ablation["variant"].eq(variant)
+            & ablation["safety_category"].eq("storage")
+        ][["mutation_operator", "verdict"]].copy()
+        part["method"] = label
+        frames.append(part)
     oz = pd.read_csv(RAW / "oz_baseline.csv")
     oz = oz.loc[oz["safety_category"].eq("storage")][
         ["mutation_operator", "verdict"]
     ].copy()
     oz["method"] = "OZ"
-    data = pd.concat([ug, oz], ignore_index=True)
-    data["group"] = data["mutation_operator"].map(STORAGE_GROUP)
+    frames.append(oz)
+    data = pd.concat(frames, ignore_index=True)
+    data["class"] = data["mutation_operator"].map(STORAGE_GROUP)
+    data["detected"] = data["verdict"].eq("Unsafe").astype(int)
     return data
 
 
 def storage_profile() -> None:
-    """Panel 1a: group-level detection profile with non-boundary estimates."""
-    data = storage_method_frame()
+    data = storage_method_data()
     grouped = (
-        data.assign(detected=data["verdict"].eq("Unsafe").astype(int))
-        .groupby(["group", "method"])["detected"]
+        data.groupby(["class", "method"])["detected"]
         .agg(successes="sum", total="count")
         .reset_index()
     )
-    fig, ax = plt.subplots(figsize=(3.45, 2.55))
-    styles = {
-        "UG": dict(color="#1f6f78", marker="D", linestyle="-"),
-        "OZ": dict(color="#e68600", marker="v", linestyle="--"),
-    }
+    fig, ax = plt.subplots(figsize=(7.4, 5.4))
     x = np.arange(len(STORAGE_ORDER))
-    for method in ("UG", "OZ"):
-        part = grouped.loc[grouped["method"].eq(method)].set_index("group").reindex(STORAGE_ORDER)
-        est, low, high = jeffreys(part["successes"], part["total"])
-        ax.errorbar(
+    for index, label in enumerate([item[1] for item in METHODS] + ["OZ"]):
+        part = (
+            grouped.loc[grouped["method"].eq(label)]
+            .set_index("class")
+            .reindex(STORAGE_ORDER)
+        )
+        ax.plot(
             x,
-            est,
-            yerr=np.vstack([est - low, high - est]),
-            linewidth=1.6,
-            markersize=5,
-            capsize=2.5,
-            label=method,
-            **styles[method],
+            jeffreys(part["successes"], part["total"]),
+            label=label,
+            linestyle=LINE_STYLES[index],
+            marker=MARKERS[index],
         )
     ax.set_xticks(x, STORAGE_ORDER)
-    ax.set_ylabel("Detection estimate")
-    ax.set_xlabel("Storage mutation group")
-    ax.set_ylim(0.02, 1.04)
+    ax.set_ylim(0.02, 1.03)
     ax.set_yticks([0.2, 0.4, 0.6, 0.8])
-    ax.grid(axis="y", linestyle=":", alpha=0.35)
-    ax.legend(frameon=True, ncol=2, loc="lower left")
+    finish(
+        ax,
+        xlabel="Mutation class",
+        ylabel="Detection estimate",
+        legend_cols=2,
+        legend_loc="lower left",
+    )
     save(fig, "figure_storage_1a_profile.pdf")
 
 
 def storage_cumulative() -> None:
-    """Panel 1b: cumulative number of detected hazards as complexity grows."""
-    data = storage_method_frame()
-    grouped = (
-        data.assign(detected=data["verdict"].eq("Unsafe").astype(int))
-        .groupby(["group", "method"])["detected"]
+    data = storage_method_data()
+    cumulative = (
+        data.groupby(["class", "method"])["detected"]
         .sum()
         .unstack(fill_value=0)
         .reindex(STORAGE_ORDER)
         .cumsum()
     )
-    fig, ax = plt.subplots(figsize=(3.45, 2.55))
+    fig, ax = plt.subplots(figsize=(7.4, 5.4))
     x = np.arange(len(STORAGE_ORDER))
-    ax.plot(
-        x,
-        grouped["UG"],
-        color="#1f6f78",
-        marker="D",
-        linewidth=1.7,
-        markersize=5,
-        label="UG",
-    )
-    ax.plot(
-        x,
-        grouped["OZ"],
-        color="#e68600",
-        marker="v",
-        linestyle="--",
-        linewidth=1.7,
-        markersize=5,
-        label="OZ",
-    )
+    for index, label in enumerate([item[1] for item in METHODS] + ["OZ"]):
+        ax.plot(
+            x,
+            cumulative[label],
+            label=label,
+            linestyle=LINE_STYLES[index],
+            marker=MARKERS[index],
+        )
     ax.set_xticks(x, STORAGE_ORDER)
-    ax.set_ylabel("Cumulative detected pairs")
-    ax.set_xlabel("Included mutation groups")
-    ax.set_ylim(8, 58)
-    ax.grid(axis="y", linestyle=":", alpha=0.35)
-    ax.legend(frameon=True, ncol=2, loc="upper left")
+    ax.set_ylim(2, 58)
+    finish(
+        ax,
+        xlabel="Cumulative analysis scope",
+        ylabel="Detected storage regressions",
+        legend_cols=2,
+        legend_loc="upper left",
+    )
     save(fig, "figure_storage_1b_cumulative.pdf")
 
 
-def storage_sensitivity() -> None:
-    """Panel 1c: storage recall/latency trade-off for layout ablations."""
+def storage_latency() -> None:
     data = pd.read_csv(RAW / "ablation_results.csv")
-    variants = ["NameOnly", "SlotOffsetType", "NoStorageType", "Full"]
-    labels = ["Name", "Slot/type", "No type", "Full"]
-    first = data.loc[
-        data["run_id"].eq(1)
-        & data["variant"].isin(variants)
+    data = data.loc[
+        data["variant"].isin([item[0] for item in METHODS])
         & data["safety_category"].eq("storage")
     ].copy()
-    detected = (
-        first.assign(hit=first["verdict"].eq("Unsafe").astype(int))
-        .groupby("variant")["hit"]
-        .agg(successes="sum", total="count")
-        .reindex(variants)
-    )
-    recall, _, _ = jeffreys(detected["successes"], detected["total"])
-    runtime = (
-        data.loc[
-            data["variant"].isin(variants) & data["safety_category"].eq("storage")
-        ]
-        .groupby("variant")["total_runtime_ms"]
+    data["class"] = data["mutation_operator"].map(STORAGE_GROUP)
+    timing = (
+        data.groupby(["class", "variant"])["total_runtime_ms"]
         .median()
-        .reindex(variants)
-        .to_numpy()
+        .unstack()
+        .reindex(STORAGE_ORDER)
     )
-    fig, ax = plt.subplots(figsize=(3.45, 2.55))
-    x = np.arange(len(variants))
-    ax.bar(
-        x,
-        recall,
-        width=0.62,
-        color="#d8b5e8",
-        edgecolor="#8f5ca8",
-        hatch="//",
-        linewidth=0.7,
-        label="Detection",
+    fig, ax = plt.subplots(figsize=(7.4, 5.4))
+    x = np.arange(len(STORAGE_ORDER))
+    for index, (variant, label) in enumerate(METHODS):
+        ax.plot(
+            x,
+            timing[variant],
+            label=label,
+            linestyle=LINE_STYLES[index],
+            marker=MARKERS[index],
+        )
+    ax.set_xticks(x, STORAGE_ORDER)
+    finish(
+        ax,
+        xlabel="Mutation class",
+        ylabel="Median analysis latency (ms)",
+        legend_cols=2,
+        legend_loc="upper left",
     )
-    ax.set_ylim(0.005, 1.03)
-    ax.set_yticks([0.2, 0.4, 0.6, 0.8])
-    ax.set_ylabel("Detection estimate", color="#8f5ca8")
-    ax.tick_params(axis="y", colors="#8f5ca8")
-    ax.set_xticks(x, labels)
-    ax.set_xlabel("Layout configuration")
-    other = ax.twinx()
-    other.spines.right.set_visible(True)
-    other.plot(
-        x,
-        runtime,
-        color="#d62728",
-        marker="x",
-        linestyle=":",
-        linewidth=1.5,
-        markersize=6,
-        label="Latency",
-    )
-    other.set_ylabel("Median latency (ms)", color="#d62728")
-    other.tick_params(axis="y", colors="#d62728")
-    other.set_ylim(max(0.2, runtime.min() - 0.15), runtime.max() + 0.15)
-    handles = [ax.patches[0], other.lines[0]]
-    ax.legend(handles, ["Detection", "Latency"], frameon=True, loc="upper left")
     save(fig, "figure_storage_1c_sensitivity.pdf")
 
 
-def behavior_method_profile() -> None:
-    """Panel 2a: relational checker versus bounded fuzzing by semantics."""
-    full = pd.read_csv(RAW / "full_results.csv")
-    ug = full.loc[
-        full["run_id"].eq(1) & full["safety_category"].eq("behavior")
-    ][["pair_id", "mutation_operator", "verdict"]].copy()
-    ug["method"] = "UG"
-    fuzz = pd.read_csv(RAW / "fuzz_baseline.csv")
-    fuzz = fuzz.loc[fuzz["safety_category"].eq("behavior")][
-        ["pair_id", "mutation_operator", "verdict"]
-    ].copy()
-    fuzz["method"] = "Fuzz"
-    data = pd.concat([ug, fuzz], ignore_index=True)
-    data["group"] = data["mutation_operator"].map(BEHAVIOR_GROUP)
+def storage_operator_detail() -> None:
+    data = storage_method_data()
     grouped = (
-        data.assign(detected=data["verdict"].eq("Unsafe").astype(int))
-        .groupby(["group", "method"])["detected"]
+        data.groupby(["mutation_operator", "method"])["detected"]
         .agg(successes="sum", total="count")
         .reset_index()
     )
-    fig, ax = plt.subplots(figsize=(3.45, 2.55))
-    x = np.arange(len(BEHAVIOR_UNSAFE_ORDER))
-    styles = {
-        "UG": dict(color="#1f6f78", marker="D", linestyle="-"),
-        "Fuzz": dict(color="#d62728", marker="*", linestyle="--"),
-    }
-    for method in ("UG", "Fuzz"):
-        part = grouped.loc[grouped["method"].eq(method)].set_index("group").reindex(BEHAVIOR_UNSAFE_ORDER)
-        est, low, high = jeffreys(part["successes"], part["total"])
-        ax.errorbar(
-            x,
-            est,
-            yerr=np.vstack([est - low, high - est]),
-            linewidth=1.6,
-            markersize=6,
-            capsize=2.5,
-            label=method,
-            **styles[method],
+    fig, ax = plt.subplots(figsize=(12.0, 5.8))
+    x = np.arange(len(STORAGE_OPERATOR_ORDER))
+    for index, label in enumerate([item[1] for item in METHODS] + ["OZ"]):
+        part = (
+            grouped.loc[grouped["method"].eq(label)]
+            .set_index("mutation_operator")
+            .reindex(STORAGE_OPERATOR_ORDER)
         )
-    ax.set_xticks(x, BEHAVIOR_UNSAFE_ORDER)
-    ax.set_ylabel("Detection estimate")
-    ax.set_xlabel("Behavior mutation group")
-    ax.set_ylim(0.18, 1.04)
+        ax.plot(
+            x,
+            jeffreys(part["successes"], part["total"]),
+            label=label,
+            linestyle=LINE_STYLES[index],
+            marker=MARKERS[index],
+        )
+    ax.set_xticks(x, STORAGE_OPERATOR_LABELS, rotation=28, ha="right")
+    ax.set_ylim(0.02, 1.04)
     ax.set_yticks([0.2, 0.4, 0.6, 0.8])
-    ax.grid(axis="y", linestyle=":", alpha=0.35)
-    ax.legend(frameon=True, ncol=2, loc="lower left")
+    finish(
+        ax,
+        xlabel="Storage mutation operator",
+        ylabel="Detection estimate",
+        legend_cols=3,
+        legend_loc="lower left",
+    )
+    save(fig, "figure_storage_1d_operators.pdf")
+
+
+def first_run_behavior() -> pd.DataFrame:
+    full = pd.read_csv(RAW / "full_results.csv")
+    data = full.loc[
+        full["run_id"].eq(1) & full["safety_category"].eq("behavior")
+    ].copy()
+    data["class"] = data["mutation_operator"].map(BEHAVIOR_GROUP)
+    return data
+
+
+def behavior_evidence_profile() -> None:
+    ug = first_run_behavior()
+    fuzz = pd.read_csv(RAW / "fuzz_baseline.csv")
+    fuzz = fuzz.loc[fuzz["safety_category"].eq("behavior")].copy()
+    fuzz["class"] = fuzz["mutation_operator"].map(BEHAVIOR_GROUP)
+    records = []
+    for _, row in ug.iterrows():
+        result = json.loads(row["behavior_results"])
+        outcome = result[0]["verdict"] if result else row["verdict"]
+        records.extend(
+            [
+                {"class": row["class"], "series": "UG-CEx", "value": outcome == "Unsafe"},
+                {"class": row["class"], "series": "UG-Proof", "value": outcome == "Safe"},
+                {"class": row["class"], "series": "UG-Unk.", "value": outcome == "Unknown"},
+            ]
+        )
+    for _, row in fuzz.iterrows():
+        records.extend(
+            [
+                {"class": row["class"], "series": "Fuzz-CEx", "value": row["verdict"] == "Unsafe"},
+                {"class": row["class"], "series": "Fuzz-Miss", "value": row["verdict"] != "Unsafe"},
+            ]
+        )
+    counts = (
+        pd.DataFrame(records)
+        .groupby(["class", "series"])["value"]
+        .sum()
+        .unstack(fill_value=0)
+        .reindex(BEHAVIOR_ORDER)
+    )
+    series = ["UG-CEx", "Fuzz-CEx", "UG-Proof", "UG-Unk.", "Fuzz-Miss"]
+    fig, ax = plt.subplots(figsize=(7.4, 5.4))
+    x = np.arange(len(BEHAVIOR_ORDER))
+    for index, label in enumerate(series):
+        ax.plot(
+            x,
+            counts[label],
+            label=label,
+            linestyle=LINE_STYLES[index],
+            marker=MARKERS[index],
+        )
+    ax.set_xticks(x, BEHAVIOR_ORDER)
+    ax.set_ylim(-0.6, max(21, float(counts.max().max()) + 2))
+    finish(
+        ax,
+        xlabel="Program-change category",
+        ylabel="Observed cases",
+        legend_cols=2,
+        legend_loc="upper right",
+    )
     save(fig, "figure_behavior_2a_profile.pdf")
 
 
-def behavior_outcomes() -> None:
-    """Panel 2b: raw proof/counterexample/unknown outcome trajectories."""
+def behavior_stage_latency() -> None:
     full = pd.read_csv(RAW / "full_results.csv")
-    data = full.loc[full["run_id"].eq(1)].copy()
-    records = []
-    for _, row in data.iterrows():
-        group = BEHAVIOR_GROUP.get(row["mutation_operator"])
-        if not group:
-            continue
-        results = json.loads(row["behavior_results"])
-        if results:
-            records.append({"group": group, "outcome": results[0]["verdict"]})
-    pivot = (
-        pd.DataFrame(records)
-        .groupby(["group", "outcome"])
-        .size()
-        .unstack(fill_value=0)
-        .reindex(index=BEHAVIOR_ALL_ORDER, columns=["Unsafe", "Safe", "Unknown"], fill_value=0)
-    )
-    fig, ax = plt.subplots(figsize=(3.45, 2.55))
-    x = np.arange(len(BEHAVIOR_ALL_ORDER))
-    series = [
-        ("Unsafe", "CEx", "#d62728", "*", "--"),
-        ("Safe", "Proof", "#1f6f78", "D", "-"),
-        ("Unknown", "Unk.", "#e68600", "v", ":"),
+    data = full.loc[full["safety_category"].eq("behavior")].copy()
+    data["class"] = data["mutation_operator"].map(BEHAVIOR_GROUP)
+    stages = [
+        ("artifact_extraction_ms", "Artifact"),
+        ("storage_analysis_ms", "Layout"),
+        ("function_mapping_ms", "Mapping"),
+        ("product_program_ms", "Product"),
+        ("total_runtime_ms", "Total"),
     ]
-    for column, label, color, marker, linestyle in series:
+    timing = data.groupby("class")[[item[0] for item in stages]].median().reindex(BEHAVIOR_ORDER)
+    fig, ax = plt.subplots(figsize=(7.4, 5.4))
+    x = np.arange(len(BEHAVIOR_ORDER))
+    for index, (column, label) in enumerate(stages):
         ax.plot(
             x,
-            pivot[column],
-            color=color,
-            marker=marker,
-            linestyle=linestyle,
-            linewidth=1.6,
-            markersize=6,
+            timing[column],
             label=label,
+            linestyle=LINE_STYLES[index],
+            marker=MARKERS[index],
         )
-    ax.set_xticks(x, BEHAVIOR_ALL_ORDER)
-    ax.set_ylabel("Observed cases")
-    ax.set_xlabel("Semantic group")
-    ax.set_ylim(-1, 32)
-    ax.grid(axis="y", linestyle=":", alpha=0.35)
-    ax.legend(frameon=True, ncol=3, loc="upper right")
-    save(fig, "figure_behavior_2b_outcomes.pdf")
+    ax.set_xticks(x, BEHAVIOR_ORDER)
+    ax.set_yscale("log")
+    finish(
+        ax,
+        xlabel="Semantic category",
+        ylabel="Median latency (ms, log scale)",
+        legend_cols=2,
+        legend_loc="center right",
+    )
+    save(fig, "figure_behavior_2b_latency.pdf")
 
 
 def behavior_replay() -> None:
-    """Panel 2c: independent EVM replay distribution by semantic group."""
     replay = pd.read_csv(RAW / "evm_replay.csv")
     with (ROOT / "dataset" / "metadata" / "pairs.csv").open(
         encoding="utf-8", newline=""
@@ -362,47 +394,140 @@ def behavior_replay() -> None:
         operators = {
             row["pair_id"]: row["mutation_operator"] for row in csv.DictReader(handle)
         }
-    replay["group"] = replay["pair_id"].map(
+    replay["class"] = replay["pair_id"].map(
         lambda pair_id: BEHAVIOR_GROUP[operators[pair_id]]
     )
-    timing = (
-        replay.groupby("group")["runtime_ms"]
-        .agg(
-            median="median",
-            p95=lambda values: float(np.percentile(values.to_numpy(), 95)),
+    stats = replay.groupby("class")["runtime_ms"].agg(
+        Q1=lambda values: float(np.percentile(values, 25)),
+        Median="median",
+        Mean="mean",
+        Q3=lambda values: float(np.percentile(values, 75)),
+        p95=lambda values: float(np.percentile(values, 95)),
+    ).reindex(BEHAVIOR_ORDER)
+    fig, ax = plt.subplots(figsize=(7.4, 5.4))
+    x = np.arange(len(BEHAVIOR_ORDER))
+    for index, label in enumerate(["Q1", "Median", "Mean", "Q3", "p95"]):
+        ax.plot(
+            x,
+            stats[label],
+            label=label,
+            linestyle=LINE_STYLES[index],
+            marker=MARKERS[index],
         )
-        .reindex(BEHAVIOR_UNSAFE_ORDER)
+    ax.set_xticks(x, BEHAVIOR_ORDER)
+    finish(
+        ax,
+        xlabel="Counterexample category",
+        ylabel="Anvil replay latency (ms)",
+        legend_cols=3,
+        legend_loc="upper left",
     )
-    fig, ax = plt.subplots(figsize=(3.45, 2.55))
-    x = np.arange(len(BEHAVIOR_UNSAFE_ORDER))
-    ax.plot(
-        x,
-        timing["median"],
-        color="#1f6f78",
-        marker="D",
-        linewidth=1.7,
-        markersize=5,
-        label="Median",
-    )
-    ax.plot(
-        x,
-        timing["p95"],
-        color="#d62728",
-        marker="*",
-        linestyle="--",
-        linewidth=1.6,
-        markersize=7,
-        label="p95",
-    )
-    ax.set_xticks(x, BEHAVIOR_UNSAFE_ORDER)
-    ax.set_ylabel("EVM replay latency (ms)")
-    ax.set_xlabel("Counterexample group")
-    lower = max(0, float(timing.min().min()) - 120)
-    upper = float(timing.max().max()) + 120
-    ax.set_ylim(lower, upper)
-    ax.grid(axis="y", linestyle=":", alpha=0.35)
-    ax.legend(frameon=True, ncol=2, loc="upper left")
     save(fig, "figure_behavior_2c_replay.pdf")
+
+
+def fuzz_budget_latency() -> None:
+    data = pd.read_csv(RAW / "fuzz_budget_sweep.csv")
+    data = data.loc[data["safety_category"].eq("behavior")].copy()
+    data["class"] = data["mutation_operator"].map(BEHAVIOR_GROUP)
+    timing = (
+        data.groupby(["budget", "class"])["runtime_ms"]
+        .median()
+        .unstack()
+        .reindex(columns=BEHAVIOR_ORDER)
+    )
+    fig, ax = plt.subplots(figsize=(7.4, 5.4))
+    for index, label in enumerate(BEHAVIOR_ORDER):
+        ax.plot(
+            timing.index,
+            timing[label],
+            label=label,
+            linestyle=LINE_STYLES[index],
+            marker=MARKERS[index],
+        )
+    ax.set_xticks(timing.index)
+    finish(
+        ax,
+        xlabel="Differential-fuzzing trial budget",
+        ylabel="Median baseline latency (ms)",
+        legend_cols=2,
+        legend_loc="upper left",
+    )
+    save(fig, "figure_behavior_2d_fuzz_budget.pdf")
+
+
+def ablation_metrics() -> None:
+    data = pd.read_csv(SUMMARY / "ablation_summary.csv")
+    order = [
+        "NameOnly",
+        "NoBehavior",
+        "SlotOffsetType",
+        "NoStorageType",
+        "NoReplay",
+        "NoSkipUnchanged",
+        "Full",
+    ]
+    labels = ["Name", "No beh.", "Slot/type", "No type", "No replay", "No skip", "Full"]
+    frame = data.set_index("variant").reindex(order)
+    total = frame[["tp", "tn", "fp", "fn"]].sum(axis=1)
+    coverage = 1.0 - frame["unknown_rate"] - frame["timeout_rate"]
+    metrics = pd.DataFrame(
+        {
+            "Accuracy": frame["accuracy"],
+            "Precision": frame["precision"],
+            "Recall": frame["recall"],
+            "F1": frame["f1"],
+            "Coverage": (coverage * total + 0.5) / (total + 1),
+        },
+        index=order,
+    )
+    fig, ax = plt.subplots(figsize=(10.2, 5.6))
+    x = np.arange(len(order))
+    for index, column in enumerate(metrics.columns):
+        ax.plot(
+            x,
+            metrics[column],
+            label=column,
+            linestyle=LINE_STYLES[index],
+            marker=MARKERS[index],
+        )
+    ax.set_xticks(x, labels, rotation=20, ha="right")
+    ax.set_ylim(0.35, 1.03)
+    finish(
+        ax,
+        xlabel="Analyzer configuration",
+        ylabel="Classification estimate",
+        legend_cols=3,
+        legend_loc="lower right",
+    )
+    save(fig, "figure_ablation_3a_metrics.pdf")
+
+
+def scaling_quantiles() -> None:
+    data = pd.read_csv(RAW / "scalability_results.csv")
+    stats = data.groupby("changed_preserved_functions")["verification_time_ms"].agg(
+        Q1=lambda values: float(np.percentile(values, 25)),
+        Median="median",
+        Q3=lambda values: float(np.percentile(values, 75)),
+        p95=lambda values: float(np.percentile(values, 95)),
+    )
+    fig, ax = plt.subplots(figsize=(7.4, 5.4))
+    for index, label in enumerate(["Q1", "Median", "Q3", "p95"]):
+        ax.plot(
+            stats.index,
+            stats[label],
+            label=label,
+            linestyle=LINE_STYLES[index],
+            marker=MARKERS[index],
+        )
+    ax.set_xticks(stats.index)
+    finish(
+        ax,
+        xlabel="Relational obligations",
+        ylabel="Batch verification latency (ms)",
+        legend_cols=2,
+        legend_loc="upper left",
+    )
+    save(fig, "figure_scaling_3b_quantiles.pdf")
 
 
 def scalability_figure() -> None:
@@ -414,33 +539,35 @@ def scalability_figure() -> None:
         .median()
         .rename(columns={"verification_time_ms": "median_ms"})
     )
-    fig, axes = plt.subplots(1, 2, figsize=(7.05, 2.65))
+    fig, axes = plt.subplots(1, 2, figsize=(14.6, 5.4))
     axes[0].scatter(
         data["changed_preserved_functions"],
         data["verification_time_ms"],
-        alpha=0.22,
-        s=9,
+        alpha=0.25,
+        s=30,
     )
     axes[0].plot(
         medians["changed_preserved_functions"],
         medians["median_ms"],
         color="black",
         marker="o",
-        linewidth=1.2,
-        label="median",
+        linewidth=2.2,
+        label="Median",
     )
-    axes[0].set_xlabel("Relational obligations in batch")
-    axes[0].set_ylabel("Verification time (ms)")
-    axes[0].legend(frameon=False)
+    axes[0].set_xlabel("Relational obligations")
+    axes[0].set_ylabel("Verification latency (ms)")
+    axes[0].legend(frameon=True)
+    axes[0].grid(axis="y", linestyle=":", alpha=0.35)
     axes[1].scatter(
         data["symbolic_path_count"],
         data["verification_time_ms"],
-        alpha=0.25,
-        s=9,
+        alpha=0.28,
+        s=30,
     )
-    axes[1].set_xlabel("Aggregate symbolic path count")
-    axes[1].set_ylabel("Verification time (ms)")
-    fig.tight_layout()
+    axes[1].set_xlabel("Aggregate symbolic paths")
+    axes[1].set_ylabel("Verification latency (ms)")
+    axes[1].grid(axis="y", linestyle=":", alpha=0.35)
+    fig.tight_layout(pad=0.7)
     fig.savefig(FIGURES / "figure_scalability.pdf", bbox_inches="tight")
     plt.close(fig)
 
@@ -450,19 +577,26 @@ def main() -> None:
     configure()
     storage_profile()
     storage_cumulative()
-    storage_sensitivity()
-    behavior_method_profile()
-    behavior_outcomes()
+    storage_latency()
+    storage_operator_detail()
+    behavior_evidence_profile()
+    behavior_stage_latency()
     behavior_replay()
+    fuzz_budget_latency()
+    ablation_metrics()
+    scaling_quantiles()
     scalability_figure()
     manifest = {
         "format": "independent vector PDF panels",
-        "assembly_note": "Panels are intentionally separate for later subfigure composition.",
+        "font_size_pt": 18,
+        "style": "Matplotlib default text/font/color cycle",
+        "assembly_note": "Panels are separate for later subfigure composition.",
         "source_data": [
             "dataset/results/raw/full_results.csv",
             "dataset/results/raw/ablation_results.csv",
             "dataset/results/raw/oz_baseline.csv",
             "dataset/results/raw/fuzz_baseline.csv",
+            "dataset/results/raw/fuzz_budget_sweep.csv",
             "dataset/results/raw/evm_replay.csv",
             "dataset/results/raw/scalability_results.csv",
         ],
