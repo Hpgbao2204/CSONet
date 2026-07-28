@@ -7,6 +7,7 @@ import hashlib
 import re
 import time
 from dataclasses import dataclass, asdict
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,7 @@ def _normalized(text: str) -> str:
     return re.sub(r"\s+", "", text)
 
 
+@lru_cache(maxsize=4096)
 def _dependency_surface(source: str, entry_name: str) -> str:
     """Fingerprint everything an unchanged external method may depend on.
 
