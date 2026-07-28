@@ -695,7 +695,7 @@ def diagnostics_3a_quality_profiles() -> None:
     ax.set_xticks(x, labels)
     ax.set_ylim(0.30, 1.01)
     axes_style(ax, "Ablation configuration", "Classification estimate")
-    marker_only_legend(ax, ncol=1, loc="upper right", frameon=True)
+    marker_only_legend(ax, ncol=1, loc="lower right", frameon=True)
     save(fig, "figure_diagnostics_3a_quality.pdf")
 
 
@@ -750,7 +750,7 @@ def diagnostics_3b_decision_profiles() -> None:
     ax.set_xticks(x, labels)
     ax.set_ylim(0.30, 1.01)
     axes_style(ax, "Ablation configuration", "Decision estimate")
-    marker_only_legend(ax, ncol=1, loc="upper right", frameon=True)
+    marker_only_legend(ax, ncol=1, loc="lower right", frameon=True)
     save(fig, "figure_diagnostics_3b_decision.pdf")
 
 
@@ -941,26 +941,27 @@ def scalability_obligations() -> None:
     ).reset_index()
     x = summary["changed_preserved_functions"].to_numpy()
     fig, ax = plt.subplots(figsize=(8.0, 8.0))
+    colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
     ax.scatter(
         data["changed_preserved_functions"],
         data["verification_time_ms"],
         alpha=0.12,
         s=24,
-        color=mpl.rcParams["axes.prop_cycle"].by_key()["color"][0],
+        color=colors[7],
         label="Measured runs",
     )
     ax.fill_between(
         x,
         summary["q1"].to_numpy(),
         summary["q3"].to_numpy(),
-        color=mpl.rcParams["axes.prop_cycle"].by_key()["color"][0],
-        alpha=0.18,
+        color=colors[2],
+        alpha=0.14,
         label="Interquartile band",
     )
     ax.plot(
         x,
         summary["median_ms"],
-        color=mpl.rcParams["axes.prop_cycle"].by_key()["color"][0],
+        color=colors[0],
         marker="o",
         linewidth=2.2,
         label="Median",
@@ -968,7 +969,7 @@ def scalability_obligations() -> None:
     ax.plot(
         x,
         summary["p95"],
-        color=mpl.rcParams["axes.prop_cycle"].by_key()["color"][1],
+        color=colors[1],
         marker="s",
         linestyle="--",
         linewidth=1.8,
@@ -977,11 +978,11 @@ def scalability_obligations() -> None:
     axes_style(ax, "Relational obligations", "Verification latency (ms)")
     marker_only_legend(ax, loc="upper left", frameon=True)
 
-    inset = ax.inset_axes([0.54, 0.07, 0.40, 0.30])
+    inset = ax.inset_axes([0.54, 0.12, 0.40, 0.27])
     spread = summary["p95"] / summary["median_ms"]
-    inset.plot(x, spread, marker="D", linewidth=1.5, color=mpl.rcParams["axes.prop_cycle"].by_key()["color"][2])
+    inset.plot(x, spread, marker="D", linewidth=1.5, color=colors[2])
     inset.set_title("Tail / median", fontsize=16)
-    inset.set_xlabel("Obligations", fontsize=14)
+    inset.set_xlabel("Obligations", fontsize=14, labelpad=2)
     inset.tick_params(labelsize=13)
     inset.grid(linestyle=":", alpha=0.25)
     save(fig, "figure_scalability_obligations.pdf")
