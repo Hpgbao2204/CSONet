@@ -5,6 +5,8 @@
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
 \usepackage{graphicx}
+\usepackage{subcaption}
+\captionsetup[subfigure]{font=scriptsize,skip=1pt}
 \usepackage{listings}
 \usepackage{xcolor}
 \usepackage{url}
@@ -64,7 +66,7 @@ Vietnam National University, Ho Chi Minh City, Viet Nam
 \maketitle
 %
 \begin{abstract}
-Proxy upgrades retain an address and persistent storage while replacing the code that interprets them.  A new implementation may therefore reinterpret old bytes or change the observable transition of a preserved entry point.  We present \tool, an offline analyzer combining compiler-grounded storage footprints with selective relational verification.  Its product obligation compares success status, return or revert data, events, external interactions, and related post-state.  Satisfiable obligations yield replayable counterexamples; unsatisfiable obligations establish equivalence under the encoded semantics and declared domain; unsupported constructs remain explicit.  We evaluate 180 compiling Solidity upgrade pairs over 20 originals and 37 mutation operators using 43,500 measured observations, OpenZeppelin and differential-fuzzing baselines, and Anvil replay.  Storage analysis obtains precision 0.885 and recall 0.900, while behavioral analysis obtains precision 0.873 and recall 0.800.  All 48 solver counterexamples replay on Anvil, with a two-sided Wilson 95\% lower endpoint of 0.926.
+Proxy upgrades retain an address and persistent storage while replacing the code that interprets them.  A new implementation may therefore reinterpret old bytes or change the observable transition of a preserved entry point.  We present \tool, an offline analyzer combining compiler-grounded storage footprints with selective relational verification.  Its product obligation compares success status, return or revert data, events, external interactions, and related post-state.  Satisfiable obligations yield replayable counterexamples; unsatisfiable obligations establish equivalence within the encoded semantics, declared domain, and supported frontend fragment; unsupported constructs remain explicit.  We evaluate 180 compiling Solidity upgrade pairs over 20 originals and 37 mutation operators using OpenZeppelin and differential-fuzzing baselines, Anvil replay, and 43,500 repeated timing observations.  Storage analysis obtains precision 0.885 and recall 0.900, while behavioral analysis obtains precision 0.873 and recall 0.800.  All 48 solver counterexamples replay on Anvil, with a two-sided Wilson 95\% lower endpoint of 0.926.
 
 \keywords{Upgradeable smart contracts \and Relational verification \and Storage layout \and SMT \and Solidity}
 \end{abstract}
@@ -94,10 +96,10 @@ Under \texttt{delegatecall}, implementation instructions read and write the prox
 
 \subsection{Verification and testing}
 
-Recent work illustrates three complementary directions.  DCV verifies declarative contracts by induction, invariant studies quantify which inferred properties are effective, and PropertyGPT retrieves and generates candidate specifications~\cite{chen2024dcv,chen2024invariants,liu2025propertygpt}. AVVerifier and ZepScope specialize program analysis to address validation and library-check consistency~\cite{sun2024avverifier,liu2024zepscope}, whereas CrySol combines replay and dynamic taint analysis for cryptographic defects~\cite{zhang2025crysol}.  Verification-service studies expose mismatches between published source and deployed bytecode~\cite{ma2024verification}; Osprey and iAudit respectively synthesize concrete attacks and justified audit findings~\cite{ruaro2025osprey,ma2025iaudit}.  Empirical evaluations nevertheless report substantial gaps between tool capabilities and practitioner needs~\cite{chaliasos2024tools,li2024sast}.  These systems analyze one version or one vulnerability family, while \tool asks whether two versions preserve a declared cross-version relation.
+Recent work illustrates three complementary directions.  DCV verifies declarative contracts by induction, invariant studies quantify which inferred properties are effective, and PropertyGPT retrieves and generates candidate specifications~\cite{chen2024dcv,chen2024invariants,liu2025propertygpt}. AVVerifier and ZepScope specialize program analysis to address validation and library-check consistency~\cite{sun2024avverifier,liu2024zepscope}, whereas CrySol combines replay and dynamic taint analysis for cryptographic defects~\cite{zhang2025crysol}.  Verification-service studies expose mismatches between published source and deployed bytecode~\cite{ma2024verification}; Osprey and iAudit respectively synthesize concrete attacks and justified audit findings~\cite{ruaro2025osprey,ma2025iaudit}.  Empirical evaluations nevertheless report substantial gaps between tool capabilities and practitioner needs~\cite{chaliasos2024tools,li2024sast}.  These systems analyze one version or one vulnerability family, while \tool asks whether two versions preserve a declared cross-version relation. In Table~\ref{tab:related}, 2-ver.\ denotes direct cross-version analysis; symbols summarize declared scope, with partial marking a narrower objective or incomplete capability.
 
 \begin{table*}[t]
-\caption{Related-work capabilities in ascending publication year. \cmark~= support, \pmark~= partial support, and \xmark~= no support. Capability cells contain symbols only.}
+\caption{Declared capabilities of closest work, ordered chronologically. \cmark~= full, \pmark~= partial or narrower, \xmark~= absent; CEx denotes a concrete counterexample.}
 \label{tab:related}
 \centering
 \scriptsize
@@ -105,7 +107,7 @@ Recent work illustrates three complementary directions.  DCV verifies declarativ
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{lccccccc}
 \toprule
-Work & Year & Two-version & Layout & Behavior & CEx & EVM replay & Real corpus \\
+Work & Year & 2-ver. & Layout & Behav. & CEx & Replay & Real data \\
 \midrule
 USCDetector~\cite{li2024characterizing} & 2024 & \pmark & \pmark & \xmark & \xmark & \xmark & \cmark \\
 CRUSH~\cite{ruaro2024crush} & 2024 & \pmark & \cmark & \xmark & \cmark & \pmark & \cmark \\
@@ -125,7 +127,7 @@ Osprey~\cite{ruaro2025osprey} & 2025 & \xmark & \xmark & \pmark & \cmark & \cmar
 }
 \end{table*}
 
-Table~\ref{tab:related} reflects the declared support boundary rather than assigning \tool full coverage.
+
 
 \section{Relational Upgrade-Safety Model}
 \label{sec:problem}
@@ -273,7 +275,7 @@ An unchanged method is skipped only when its body and signature are unchanged an
 \end{aligned}
 \label{eq:product}
 \end{equation}
-If \(\Phi_f\) is satisfiable, its model is a regression witness.  If unsatisfiable, the verdict is \emph{Safe within the encoded model}: the procedure establishes equivalence under the encoded semantics and declared domain.  Unsupported expressions produce \(\Unknown\); solver resource exhaustion produces \(\Timeout\).
+If \(\Phi_f\) is satisfiable, its model is a regression witness.  If unsatisfiable, the verdict is \emph{Safe within the encoded model}: the procedure establishes equivalence for the selected method within the encoded semantics, declared domain, and admitted frontend fragment.  Unsupported expressions produce \(\Unknown\); solver resource exhaustion produces \(\Timeout\).
 
 Verdict precedence prioritizes evidence:
 \begin{equation}
@@ -282,7 +284,7 @@ Verdict precedence prioritizes evidence:
 \end{aligned}
 \label{eq:verdict}
 \end{equation}
-Thus a definite layout collision is not hidden by an unrelated unsupported method.  The implemented frontend covers the corpus arithmetic, guards, direct writes, returns, events, and value calls; conditional effects, loops, exception control flow, arbitrary revert-data encoding, inline assembly, unmodeled call kinds, lifecycle effects, and unsupported expressions return \(\Unknown\), never \(\Safe\).
+Thus a definite layout collision is not hidden by an unrelated unsupported method.  A \(\Safe\) verdict requires every reached construct to be \emph{Safe-capable}, meaning the frontend can construct its complete obligation. The admitted fragment covers the corpus arithmetic, guards, direct writes, returns, events, and value calls; conditional effects, loops, exceptional control flow, arbitrary revert-data encoding, behavioral inline assembly, unmodeled call kinds, lifecycle effects, and unresolved expressions propagate \(\Unknown\), never \(\Safe\).  The artifact records the construct-level admission matrix.
 
 \subsection{Counterexample checking}
 
@@ -379,225 +381,204 @@ Assume Eq.~\eqref{eq:layout-compatible}, exact transition encodings \(T_{i,f}\),
 By induction on trace length.  Initially the stores satisfy \(I_\rho\). For the inductive step, unsatisfiability of Eq.~\eqref{eq:product} excludes an observable difference for the next call and establishes related projected post-state.  This post-state is the induction hypothesis for the remaining trace.  The result follows for every finite length.
 \end{proof}
 
+The theorem is a conditional trace-preservation result, not a mechanized frontend-to-EVM correspondence proof; its assumptions make the boundary of a positive verdict explicit.
+
 For \(n\) layout cells, \(d\) changed preserved functions, and formula construction sizes \(g_f\), layout indexing costs \(O(n\log n)\), frontend work costs \(O(\sum_{f=1}^{d}g_f)\), and SMT solving remains theory-dependent.  Skipping unchanged methods makes \(d\), rather than the total public-method count, the dominant number of obligations.
 
 \section{Experimental Evaluation}
 \label{sec:evaluation}
 
-\subsection{Dataset and experimental configuration}
+\subsection{Evaluation Setup}
+\label{subsec:eval-design}
 
-The evaluation asks four questions: \textbf{RQ1} measures storage-regression detection against compiler-grounded mutations and OpenZeppelin; \textbf{RQ2} measures behavioral regression detection against a 128-trial deterministic differential baseline; \textbf{RQ3} isolates the accuracy, coverage, and latency contributions of analyzer components; and \textbf{RQ4} measures scaling with the number and symbolic-path mass of relational obligations.
+The study addresses four questions. RQ1 measures storage-regression detection relative to compiler-grounded mutations plus OpenZeppelin Upgrades Core. RQ2 measures behavioral-regression detection relative to a 128-trial deterministic differential baseline. RQ3 isolates the contribution of layout reasoning, behavioral reasoning, type interpretation, witness validation, selective obligation construction. RQ4 measures verification cost as relational obligations plus symbolic-path mass increase.
 
-We generate 20 originals spanning ten contract families and alternating transparent/UUPS metadata.  Each original has 7--8 functions and eight storage variables, including inheritance, packed scalars, a mapping, and either a dynamic array or gap.  Three independently generated upgrades per category give the balanced disjoint union
+We generate 20 original contracts across ten application families, split evenly between Transparent and UUPS proxy metadata. Each original contains 7--8 public or external functions and eight compiler-visible storage variables, covering inheritance, packed scalars, one mapping, and one dynamic array or reserved gap. Three generated upgrades per category form the balanced disjoint union:
 \begin{equation}
 \begin{aligned}
-\mathcal{D}
-&=\mathcal{D}_{\mathrm{safe}}\mathbin{\dot\cup}
-\mathcal{D}_{\mathrm{layout}}\mathbin{\dot\cup}
-\mathcal{D}_{\mathrm{behavior}},\\
-|\mathcal{D}_{\mathrm{safe}}|
-&=|\mathcal{D}_{\mathrm{layout}}|
-=|\mathcal{D}_{\mathrm{behavior}}|=60.
+\mathcal{D} &= \mathcal{D}_{\mathrm{safe}}\mathbin{\dot\cup}\mathcal{D}_{\mathrm{layout}}\mathbin{\dot\cup}\mathcal{D}_{\mathrm{behavior}},\\
+|\mathcal{D}_{\mathrm{safe}}| &= |\mathcal{D}_{\mathrm{layout}}| = |\mathcal{D}_{\mathrm{behavior}}| = 60.
 \end{aligned}
 \label{eq:dataset-partition}
 \end{equation}
-Table~\ref{tab:dataset} reports the complete balance.
+
 
 \begin{table}[t]
-\caption{Controlled corpus composition.  ``S-unsafe'' and ``B-unsafe'' denote storage and behavioral regressions.}
+\caption{Controlled corpus composition. ``S-unsafe'' denotes storage regressions; ``B-unsafe'' denotes behavioral regressions.}
 \label{tab:dataset}
 \centering
 \scriptsize
-\begin{tabular}{@{}
->{\raggedright\arraybackslash}m{0.34\columnwidth}
->{\raggedright\arraybackslash}m{0.58\columnwidth}@{}}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}m{0.34\columnwidth}>{\raggedright\arraybackslash}m{0.58\columnwidth}@{}}
 \toprule
 Property & Corpus configuration \\
 \midrule
 Original contracts & 20 contracts from 10 application families \\
-Application families & Access control, crowdfunding, escrow, marketplace, registry, reward distribution, staking, token, vault, and voting \\
-Proxy patterns & 10 Transparent and 10 UUPS instances \\
-Upgrade pairs & 180 independently generated V1--V2 pairs \\
-Ground-truth balance & 60 safe, 60 S-unsafe, and 60 B-unsafe pairs \\
-Mutation vocabulary & 37 safe, layout, behavioral, and unsupported operators \\
-Contract structure & 7--8 public or external functions and eight compiler-visible storage variables per original \\
-Solidity version & All V1 and V2 sources compile with Solidity 0.8.30 \\
+Application families & Access control, crowdfunding, escrow, marketplace, registry, reward distribution, staking, token, vault, voting \\
+Proxy patterns & 10 Transparent instances; 10 UUPS instances \\
+Upgrade pairs & 180 unique \(V_1\)--\(V_2\) pairs \\
+Ground-truth balance & 60 safe, 60 S-unsafe, 60 B-unsafe pairs \\
+Mutation vocabulary & 37 safe, layout, behavioral, unsupported operators \\
+Contract structure & 7--8 public or external functions; eight compiler-visible storage variables per original \\
+Solidity version & Every \(V_1\), \(V_2\) source compiles with Solidity 0.8.30 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The 37 operators include compatible appends, gap consumption, alpha-renaming, equivalent arithmetic, reordered independent writes, declaration insertion, packing/type changes, mapping and array root motion, inheritance changes, literal and computed assembly writes, guard/arithmetic mutations, omitted or conditional writes/events, access-control removal, external-recipient/order changes, revert-data changes, and unsupported hash returns.  Every pair compiles with Solidity 0.8.30.  Ground truth is validated independently from the proposed detector by checking mutation realization in source and compiler artifacts; it is not defined by whether \tool succeeds.  Unlike recent large-scale vulnerability-corpus construction~\cite{chen2026forge}, this construction prioritizes controlled cross-version contrasts over incident coverage.  It separates three effects that mined corpora usually confound: proxy pattern, mutation semantics, and implementation family.  Consequently, a detector is evaluated on the intended cross-version relation rather than on vulnerability labels inherited from a different single-version task.
+Table~\ref{tab:dataset} reports the corpus composition. The 37 operators span compatible refactorings, structural changes to packing, types, roots, inheritance, gaps, and assembly writes, plus behavioral changes to guards, arithmetic, state, events, calls, and revert data. Per-operator counts and realization manifests are provided in the artifact; every generated pair passes compilation.
 
-\textbf{Protocol and metrics.} OpenZeppelin Upgrades Core is run on all safe/storage cases.  The behavioral baseline executes 128 deterministic differential trials per safe/behavior case.  We count \(\Unknown\) and \(\Timeout\) on unsafe cases as false negatives, rather than deleting them.  Precision, recall, \(F_1\), accuracy, and decision coverage are computed from raw verdicts; TP, FP, TN, and FN remain in the CSV.  Boundary claims use the two-sided Wilson 95\% interval.
+Ground truth is established by a mutation-realization validator over source and compiler artifacts that never invokes \tool; incomplete artifacts, unrealized mutations, and duplicate hashes are rejected.  The controlled construction targets causal isolation and exact cross-version labels rather than ecosystem-prevalence estimation: mined upgrades improve ecological validity but seldom expose exact behavioral ground truth.  Transparent and UUPS conventions, compiler artifacts, OpenZeppelin checks, and Anvil replay provide production-toolchain grounding without making the corpus production-representative.
 
-After three warmups, the full pipeline and seven ablations are each measured 30 times: 5,400 full and 37,800 ablation pair executions, hence 43,200 pair executions.  RQ4 adds 300 batch observations, giving 43,500 measured observations in total.  All raw per-run rows are retained.  Experiments ran on Windows 11, an AMD Ryzen 7 7840HS (8 cores/16 threads), and 32\,GB RAM, with Python 3.12.10, Z3 4.13.4, Node 22.13.0, and Anvil 1.7.1.  Source code and artifacts will be updated after acceptance.
+Baselines are selected by task alignment. OpenZeppelin Upgrades Core is run on every safe/storage pair as the deployable layout baseline; DifferentialFuzz-128 performs 128 deterministic trials on every safe/behavior pair as the bounded observational baseline. Related single-version or vulnerability-specific systems are therefore compared qualitatively rather than treated as interchangeable executables.  On unsafe pairs, \(\Unknown\) or \(\Timeout\) counts as a false negative; on safe pairs, \(\Unsafe\) counts as a false positive. Raw accuracy treats non-decisions as incorrect, coverage counts definite \(\Safe/\Unsafe\) verdicts, and decided-case accuracy conditions on them.
+
+Detection proportions use two-sided Wilson 95\% intervals, and paired baseline comparisons use exact McNemar tests over matching \texttt{pair\_id}s. To preserve dependence among the nine variants derived from each source, overall metrics also use a nonparametric cluster bootstrap over the 20 original contracts (50,000 replicates, seed 26072026). The full four-state confusion matrix and construct-level support matrix are provided in the artifact.
+
+The 180 unique pairs determine detection metrics; repeated runs support timing estimates only. After three warmups, the full configuration and seven ablations are measured 30 times, and the scaling study adds 300 batch observations, yielding 43,500 timing observations. Experiments use Windows 11, an AMD Ryzen 7 7840HS (8 cores/16 threads), 32\,GB RAM, Python 3.12.10, Z3 4.13.4, Node 22.13.0, and Anvil 1.7.1. The anonymous artifact contains source pairs, manifests, measurements, replay traces, and plotting scripts; latency may vary across hardware and tool versions~\footnote{\url{https://anonymous.4open.science/r/CSONet-34CB/}}.
 
 \begin{figure*}[t]
 \centering
-\begin{minipage}[t]{0.238\textwidth}
+\begin{subfigure}[t]{0.322\textwidth}
 \centering
-\includegraphics[width=\linewidth]{figure/figure_storage_1a_profile.pdf}\\[-1mm]
-\scriptsize (a) Storage detection
-\end{minipage}\hfill
-\begin{minipage}[t]{0.238\textwidth}
+\includegraphics[width=\linewidth]{figure/figure_storage_1a_profile.pdf}
+\caption{Mutation-family detection}
+\label{fig:storage-family}
+\end{subfigure}\hfill
+\begin{subfigure}[t]{0.322\textwidth}
 \centering
-\includegraphics[width=\linewidth]{figure/figure_storage_1b_cumulative.pdf}\\[-1mm]
-\scriptsize (b) Ablation profile
-\end{minipage}\hfill
-\begin{minipage}[t]{0.238\textwidth}
+\includegraphics[width=\linewidth]{figure/figure_storage_1c_sensitivity.pdf}
+\caption{Layout-analysis latency}
+\label{fig:storage-latency}
+\end{subfigure}\hfill
+\begin{subfigure}[t]{0.322\textwidth}
 \centering
-\includegraphics[width=\linewidth]{figure/figure_storage_1c_sensitivity.pdf}\\[-1mm]
-\scriptsize (c) Layout latency
-\end{minipage}\hfill
-\begin{minipage}[t]{0.238\textwidth}
-\centering
-\includegraphics[width=\linewidth]{figure/figure_storage_1d_operators.pdf}\\[-1mm]
-\scriptsize (d) Storage evidence
-\end{minipage}
-
-\smallskip
-\begin{minipage}[t]{0.238\textwidth}
-\centering
-\includegraphics[width=\linewidth]{figure/figure_behavior_2a_profile.pdf}\\[-1mm]
-\scriptsize (e) Outcome profile
-\end{minipage}\hfill
-\begin{minipage}[t]{0.238\textwidth}
-\centering
-\includegraphics[width=\linewidth]{figure/figure_behavior_2b_latency.pdf}\\[-1mm]
-\scriptsize (f) Verification density
-\end{minipage}\hfill
-\begin{minipage}[t]{0.238\textwidth}
-\centering
-\includegraphics[width=\linewidth]{figure/figure_behavior_2c_replay.pdf}\\[-1mm]
-\scriptsize (g) Replay quantiles
-\end{minipage}\hfill
-\begin{minipage}[t]{0.238\textwidth}
-\centering
-\includegraphics[width=\linewidth]{figure/figure_behavior_2d_observables.pdf}\\[-1mm]
-\scriptsize (h) Evidence profiles
-\end{minipage}
-\caption{Detection and validation results.  The first row reports (a) posterior storage-family detection, (b) five-configuration ablation across classification criteria, (c) layout-analysis latency, and (d) storage evidence.  The second row reports (e) behavioral outcomes, (f) verification density, (g) Anvil replay quantiles, and (h) posterior EVM-evidence support.  After hardening, the behavioral run contains 12 \(\Unknown\) verdicts and no timeout; panel (e) reports them separately, while evidence-support curves condition on validated witnesses. Legends abbreviate the proposed method as UG, identifier matching as ID, slot--offset--type matching as S+T, removal of type checking as \(-\tau\), and OpenZeppelin as OZ.  S+T and OZ coincide in panel (a).}
-\label{fig:effectiveness}
+\includegraphics[width=\linewidth]{figure/figure_storage_1d_operators.pdf}
+\caption{Evidence sources}
+\label{fig:storage-evidence}
+\end{subfigure}
+\caption{Storage-regression results. Legends use UG for \tool, ID for identifier matching, S+T for slot--offset--type matching, \(-\tau\) for removal of type checking, and OZ for OpenZeppelin. S+T coincides with OZ in Fig.~\ref{fig:storage-family}.}
+\label{fig:storage-results}
 \end{figure*}
 
-\subsection{RQ1: storage compatibility}
+\subsection{Storage-Regression Detection}
+\label{subsec:storage-results}
 
-\tool detects 54 of the 60 storage regressions, yielding precision 0.885, recall 0.900, and \(F_1=0.893\); OpenZeppelin reaches recall 0.700.  The smooth posterior profiles in Fig.~\ref{fig:effectiveness}(a) expose where each matcher loses mutation-family evidence.  Identifier matching loses root-moving mutations, removal of \(\tau\) loses equal-width type changes, and S+T cannot recover assembly destinations absent from the compiler layout.  The six unresolved cases compute an \texttt{sstore} destination and are conservatively classified as \(\Unknown\).
+Figure~\ref{fig:storage-results} summarizes RQ1. \tool detects 54 of 60 storage regressions (90.0\%, two-sided Wilson 95\% CI: 79.9\%--95.3\%), compared with 42 of 60 for OpenZeppelin (70.0\%, 57.5\%--80.1\%). At pair level, both detect 42 cases, 12 are detected only by \tool, none only by OpenZeppelin, and six by neither; the difference is significant under exact McNemar (\(p=4.88\times10^{-4}\)) and contract-level sign-flip (\(p=0.0078\)) tests. Precision is 0.885 and \(F_1=0.893\). The family breakdown in Fig.~\ref{fig:storage-family} shows that the gain is not isolated to one operator. Figure~\ref{fig:storage-evidence} separates the compiler, assembly, unresolved, and false-alarm evidence behind the aggregate verdicts.
 
-Panel (c) estimates the log-time density without changing observations:
-\begin{equation}
-\begin{aligned}
-u_{m,i}&=\log T_{m,i},\\
-\widehat f_m(u)
-&=\frac{1}{n_mh_m}\sum_{i=1}^{n_m}
-K\!\left(\frac{u-u_{m,i}}{h_m}\right).
-\end{aligned}
-\label{eq:kde}
-\end{equation}
-where \(m\) indexes the analyzer configuration, \(K\) is a Gaussian kernel, and \(h_m\) follows Scott's rule.  The separated modes show that simplified matchers are faster because they discard evidence, not because they optimize the complete compatibility relation.
-
-\subsection{RQ2: behavioral equivalence}
-
-The hardened analyzer detected 48/60 behavioral regressions and returned \(\Unknown\) for the remaining 12 cases, with no incorrect-safe outcome or timeout.  Raw recall remains 0.800 and exceeds the deterministic differential baseline's 0.733.  Arithmetic mutations account for the four additional detections in Fig.~\ref{fig:effectiveness}(e), while the three hash-based returns remain explicitly unsupported.
-
-All 48 SMT witnesses were reproduced on Anvil, with a two-sided Wilson 95\% lower endpoint of 0.926 and median Anvil replay latency 808.98\,ms.  This is distinct from analyzer latency and the in-process summary-validation latency.  Panel (h) summarizes each witness by the binary evidence vector
-\begin{equation}
-\begin{aligned}
-\boldsymbol{\omega}
-&=(\omega_{\mathrm{return}},\omega_{\mathrm{tx}},
-\omega_{\mathrm{event}},\omega_{\mathrm{store}},
-\omega_{\mathrm{call}})\in\{0,1\}^{5}.
-\end{aligned}
-\label{eq:evidence-vector}
-\end{equation}
-For class \(c\) and channel \(j\), panel (h) reports the Jeffreys posterior mean
-\begin{equation}
-\begin{aligned}
-\widehat p_{c,j}&=\frac{n_{c,j}+\tfrac12}{n_c+1}.
-\end{aligned}
-\label{eq:evidence-support}
-\end{equation}
-where \(n_{c,j}\) counts validated witnesses exhibiting channel \(j\). Its five curves distinguish storage evidence from counterexamples corroborated by status, events, and external-interaction traces; shape-preserving interpolation is used only between the marked estimates.
-
-\subsection{RQ3: ablation and performance}
+Six computed \texttt{sstore} destinations remain \(\Unknown\) because their target slots cannot be resolved by the current frontend. The precision loss primarily comes from label-based correspondence on safe alpha-renaming cases. This exposes a trade-off: declaration identity avoids unsafe type matches, while user-confirmable correspondence could recover safe refactoring without weakening physical checks. Figure~\ref{fig:storage-latency} shows that simplified matchers reduce latency by discarding evidence rather than optimizing the complete relation.
 
 \begin{figure*}[t]
 \centering
-\begin{minipage}[t]{0.322\textwidth}
+\begin{subfigure}[t]{0.322\textwidth}
 \centering
-\includegraphics[width=\linewidth]{figure/figure_diagnostics_3a_quality.pdf}\\[-1mm]
-\scriptsize (a) Precision, recall, and \(F_1\)
-\end{minipage}\hfill
-\begin{minipage}[t]{0.322\textwidth}
+\includegraphics[width=\linewidth]{figure/figure_behavior_2a_profile.pdf}
+\caption{Detection outcomes}
+\label{fig:behavior-detection}
+\end{subfigure}\hfill
+\begin{subfigure}[t]{0.322\textwidth}
 \centering
-\includegraphics[width=\linewidth]{figure/figure_diagnostics_3b_decision.pdf}\\[-1mm]
-\scriptsize (b) Accuracy and coverage
-\end{minipage}\hfill
-\begin{minipage}[t]{0.322\textwidth}
+\includegraphics[width=\linewidth]{figure/figure_behavior_2c_replay.pdf}
+\caption{Replay quantiles}
+\label{fig:behavior-replay}
+\end{subfigure}\hfill
+\begin{subfigure}[t]{0.322\textwidth}
 \centering
-\includegraphics[width=\linewidth]{figure/figure_diagnostics_3c_runtime.pdf}\\[-1mm]
-\scriptsize (c) Median and tail latency
-\end{minipage}
-\caption{Component ablation with a shared configuration order and plotting grammar.  Panels (a)--(b) report the primary classification metrics and decided-case accuracy.  Panel (c) contrasts median with p95 analyzer latency; compilation and Anvil replay are not included.  Curves connect Jeffreys estimates or measured timing summaries; raw classification metrics remain in the text and CSV.}
+\includegraphics[width=\linewidth]{figure/figure_behavior_2d_observables.pdf}
+\caption{Replay evidence}
+\label{fig:behavior-evidence}
+\end{subfigure}
+\caption{Behavioral-regression results. The hardened run produces 12 \(\Unknown\) verdicts and zero timeouts; evidence curves condition on validated witnesses.}
+\label{fig:behavior-results}
+\end{figure*}
+
+\subsection{Behavioral-Regression Detection}
+\label{subsec:behavior-results}
+
+Figure~\ref{fig:behavior-results} summarizes RQ2. The hardened analyzer detects 48 of 60 behavioral regressions (80.0\%, two-sided Wilson 95\% CI: 68.2\%--88.2\%), versus 44 of 60 for DifferentialFuzz-128 (73.3\%, 61.0\%--82.9\%). Both detect 44 pairs, four are detected only by \tool, none only by the baseline, and 12 by neither. The observed 6.7-point gain is not significant under either exact McNemar or contract-level sign-flip tests (both \(p=0.125\)). Figure~\ref{fig:behavior-detection} locates the additional detections in arithmetic mutations; the remaining 12 cases are \(\Unknown\), with no incorrect \(\Safe\) verdict or timeout.
+
+Every SMT witness reproduces on Anvil: 48 of 48, with a two-sided Wilson 95\% lower endpoint of 0.926. Figure~\ref{fig:behavior-replay} reports a median replay latency of 808.98\,ms, separate from analyzer and in-process validation latency. Figure~\ref{fig:behavior-evidence} separates return/revert data, transaction status, events, projected storage, and external-call traces, confirming differences beyond post-state alone.
+
+\begin{figure*}[t]
+\centering
+\begin{subfigure}[t]{0.322\textwidth}
+\centering
+\includegraphics[width=\linewidth]{figure/figure_diagnostics_3a_quality.pdf}
+\caption{Precision, recall, \(F_1\)}
+\label{fig:diagnostics-quality}
+\end{subfigure}\hfill
+\begin{subfigure}[t]{0.322\textwidth}
+\centering
+\includegraphics[width=\linewidth]{figure/figure_diagnostics_3b_decision.pdf}
+\caption{Accuracy and coverage}
+\label{fig:diagnostics-decision}
+\end{subfigure}\hfill
+\begin{subfigure}[t]{0.322\textwidth}
+\centering
+\includegraphics[width=\linewidth]{figure/figure_diagnostics_3c_runtime.pdf}
+\caption{Median and tail latency}
+\label{fig:diagnostics-latency}
+\end{subfigure}
+\caption{Component contribution under a shared configuration order. Compilation and Anvil replay are excluded from analyzer latency.}
 \label{fig:diagnostics}
 \end{figure*}
 
-The full configuration has raw precision 0.936, recall 0.850, \(F_1=0.891\), accuracy 0.700, and decision coverage 0.739.  Removing behavioral reasoning lowers recall to 0.450, while identifier-only layout matching reaches 0.483; Fig.~\ref{fig:diagnostics}(a) shows that the loss is primarily sensitivity rather than precision.  Slot--offset--type matching retains strong precision but reaches recall 0.750 because it cannot recover assembly evidence.  Figure~\ref{fig:diagnostics}(b) exposes a different failure: analyzing all functions preserves the main detection metrics but lowers coverage to 0.606 by moving otherwise skippable inputs to \(\Unknown\).
+\subsection{Component Contribution}
+\label{subsec:component-results}
 
-The latency profile in Fig.~\ref{fig:diagnostics}(c) separates central tendency from tail cost.  Analyzer latency includes artifact loading, layout checking, mapping, product construction, solving, and in-process summary validation, but excludes compilation and Anvil replay.  The full configuration records median 1.25\,ms and p95 19.75\,ms.  Disabling summary validation gives 1.55\,ms and 22.72\,ms, indicating that its sub-millisecond work is smaller than run-to-run variation; disabling behavioral reasoning leaves a similar 1.27\,ms median but collapses p95 to 1.77\,ms by removing solver-heavy cases.
+Figure~\ref{fig:diagnostics} summarizes the ablations. In Fig.~\ref{fig:diagnostics-quality}, the full configuration reaches precision 0.936, recall 0.850, and \(F_1=0.891\); raw accuracy is 0.700 and coverage 0.739. Contract-cluster bootstrap 95\% intervals for these five metrics are [0.899, 0.972], [0.767, 0.925], [0.841, 0.933], [0.650, 0.756], and [0.678, 0.800]. Removing behavioral reasoning lowers recall to 0.450; identifier-only and slot--offset--type matching reach 0.483 and 0.750, respectively, confirming complementary structural and behavioral contributions.
 
-\subsection{RQ4: scaling}
+Figure~\ref{fig:diagnostics-decision} shows that analyzing every public function preserves the principal detection metrics but lowers coverage to 0.606 by moving skippable inputs to \(\Unknown\). Selectivity therefore prevents unrelated unsupported code from suppressing definite verdicts.
+
+Analyzer latency covers loading, layout and correspondence, product construction, solving, and in-process validation; compilation and replay are excluded. Figure~\ref{fig:diagnostics-latency} reports a 1.25\,ms median and 19.75\,ms p95. Disabling witness validation gives 1.55\,ms and 22.72\,ms, so its independent consistency check has no measured cost benefit; removing behavioral reasoning leaves the median near 1.27\,ms but lowers p95 to 1.77\,ms, identifying solver obligations as the tail driver.
 
 \begin{figure*}[t]
 \centering
-\begin{minipage}[t]{0.485\textwidth}
+\begin{subfigure}[t]{0.485\textwidth}
 \centering
-\includegraphics[width=\linewidth]{figure/figure_scalability_obligations.pdf}\\[-1mm]
-\scriptsize (a) Relational obligations
-\end{minipage}\hfill
-\begin{minipage}[t]{0.485\textwidth}
+\includegraphics[width=\linewidth]{figure/figure_scalability_obligations.pdf}
+\caption{Relational obligations}
+\label{fig:scalability-obligations}
+\end{subfigure}\hfill
+\begin{subfigure}[t]{0.485\textwidth}
 \centering
-\includegraphics[width=\linewidth]{figure/figure_scalability_paths.pdf}\\[-1mm]
-\scriptsize (b) Symbolic-path mass
-\end{minipage}
-\caption{Scalability under controlled relational batches.  Panel (a) retains all runs, the interquartile band, median, p95, and an inset tail ratio. Panel (b) overlays decile medians and the OLS trend on all path-count observations.}
+\includegraphics[width=\linewidth]{figure/figure_scalability_paths.pdf}
+\caption{Symbolic-path mass}
+\label{fig:scalability-paths}
+\end{subfigure}
+\caption{Scalability under controlled relational batches.}
 \label{fig:scalability}
 \end{figure*}
 
-Figure~\ref{fig:scalability} shows median latency increasing from 19.63\,ms for one obligation to 155.46\,ms for ten.  Ordinary least squares gives 16.45\,ms per added obligation with \(R^2=0.724\), while symbolic-path mass explains slightly more variance with \(R^2=0.767\).  For observation \(i\), the centered models are
+\subsection{Scalability under Relational Workloads}
+\label{subsec:scalability-results}
+
+Figure~\ref{fig:scalability} summarizes controlled relational batches. Figure~\ref{fig:scalability-obligations} shows median latency rising from 19.63\,ms for one obligation to 155.46\,ms for ten, with an OLS slope of 16.45\,ms and \(R^2=0.724\). Figure~\ref{fig:scalability-paths} gives \(R^2=0.767\), making aggregate symbolic-path mass the stronger tested workload proxy. For observation \(i\), the centered models are
 \begin{equation}
 \begin{aligned}
-T_i-\bar T&=\beta_o(o_i-\bar o)+\varepsilon_i^{(o)},\\
-T_i-\bar T&=\beta_p(p_i-\bar p)+\varepsilon_i^{(p)}.
+T_i-\bar T &= \beta_o(o_i-\bar o)+\varepsilon_i^{(o)},\\
+T_i-\bar T &= \beta_p(p_i-\bar p)+\varepsilon_i^{(p)}.
 \end{aligned}
 \label{eq:scaling-model}
 \end{equation}
-where \(o_i\) and \(p_i\) denote obligations and aggregate symbolic paths. The reported coefficients minimize \(\sum_i(\varepsilon_i^{(\cdot)})^2\), while the figures separately retain nonparametric conditional medians.  Their agreement supports a monotone interpretation over the controlled range, not an asymptotic solver guarantee.
+where \(o_i\) denotes relational obligations, while \(p_i\) denotes aggregate symbolic paths. The measured medians plus fitted trends exhibit monotone growth with an approximately linear central trend across batches one through ten.
 
 \section{Discussion}
 \label{sec:discussion}
 
-The experiment exposes two distinct conservatism choices.  Layout name matching rejects a physically safe internal rename, producing seven false alarms.  Removing names entirely is not sufficient, because two declarations can share width and position but differ in interpretation.  A robust successor should infer correspondence from qualified declaration identity, access patterns, and user-confirmable matches.
+Ablations support the central premise of \tool: layout and behavioral reasoning provide complementary evidence. Layout analysis exposes structural reinterpretation; relational obligations capture guards, recipients, events, and interaction order. Neither component attains the combined coverage.
 
-An earlier audited revision produced nine incorrect-safe outcomes because conditional state updates, conditional events, and changed revert payloads disappeared during summary canonicalization.  The hardened artifact now blocks those cases as \(\Unknown\), and its regression suite checks that none can again become \(\Safe\).  A future control-flow-sensitive encoding is required before these cases can receive definite verdicts.
+Selectivity improves decision coverage as well as runtime: analyzing every public function exposes unrelated unsupported constructs without improving detection. Preserved-method obligations match upgrade practice, where new functionality may coexist with stable legacy transitions.
 
-The artifact separates three evidence levels: a compiler-grounded structural diagnosis, an SMT witness checked by an independent interpreter, and an actual EVM replay.  This separation is useful operationally.  A developer can inspect the exact byte footprint for a layout issue or replay a behavioral witness, while an \(\Unknown\) remains an explicit review obligation.
+The three evidence levels serve different roles. Compiler diagnostics identify the slot, offset, width, and type relation behind a structural conflict; SMT models expose distinguishing symbolic conditions; Anvil confirms them over compiled bytecode, results, logs, storage, and opcode traces. Reproduction of all 48 witnesses shows that unsafe verdicts are operational rather than solver-only artifacts. Replay validates counterexamples, not frontend completeness or an unsatisfiable result.
 
-\section{Threats to Validity}
-\label{sec:threats}
+Conservative verdicts trade completeness for trust: label identity creates seven false alarms on safe renames; computed assembly and unsupported behavior remain \(\Unknown\). User-confirmed correspondence and control-flow-sensitive summaries are direct extension points.
 
-\textbf{Construct validity.} Mutation labels represent controlled hazards, not incident frequency. The deterministic fuzzer is a bounded baseline and is not Forge's built-in fuzzer.  Every \(\Safe\) verdict means ``Safe within the encoded model,'' not unconditional Solidity safety.
-
-\textbf{Internal validity.} The generator, detector, and evaluator share a repository, but ground-truth validation does not call the proposed detector.  Compiler success, mutation realization, artifact completeness, and duplicate hashes are checked separately.  Anvil replay adds independent bytecode-level evidence for counterexamples, although it does not validate proofs.
-
-\textbf{External validity.} The corpus contains 20 generated originals and no production upgrade history; Table~\ref{tab:related} therefore marks real-corpus support as absent.  Results may not generalize to inline assembly frameworks, diamonds, custom namespaced storage, delegate-call chains, or arbitrary cross-contract behavior.
-
-\textbf{Conclusion validity.} Repeated timings share one workstation and are not independent hardware replications.  We retain raw rows, report medians/IQR/p95, and avoid exact boundary percentages.  The scaling regression is descriptive over batches one through ten.
+The corpus is designed for controlled identification, not production prevalence. Exact mutation labels and a non-\tool\ realization validator strengthen internal validity; shared originals limit pair independence, addressed by contract-cluster bootstrap. Compiler, proxy, OpenZeppelin, and Anvil components provide production-toolchain grounding, but not production representativeness. The results therefore establish controlled effectiveness over the declared transformation vocabulary; production-wide recall remains outside the present claim.
 
 \section{Conclusion}
 \label{sec:conclusion}
 
-\tool demonstrates that upgrade checking benefits from treating physical state compatibility and behavioral preservation as one selective relational problem.  The compiler-grounded relation and product obligation provide actionable structural diagnostics and EVM-replayable witnesses without claiming general Solidity support.  Future work will connect a control-flow-sensitive frontend to a semantics-linked proof argument and independently collected production histories.
+\tool frames Solidity proxy replacement safety as selective relational verification of persistent-state interpretation and observable transitions. Across 180 compiling upgrade pairs, it detects 54 of 60 storage regressions, a significant 20-point gain over OpenZeppelin on the paired corpus, and 48 of 60 behavioral regressions versus 44 under deterministic differential execution. All 48 solver witnesses reproduce on Anvil. Compiler-grounded storage reasoning, selective product obligations, explicit uncertainty, and independently checked counterexamples therefore provide stronger controlled upgrade evidence than layout checking or bounded differential execution alone.
+
+The guarantee remains bounded by the declared domain, admitted frontend fragment, and modeled environment. Computed assembly, control-flow-sensitive effects, conservative rename correspondence, and independently collected production histories remain open. Future work will broaden these boundaries while preserving the separation between bounded safety, replayable unsafety, and explicit uncertainty.
 
 \bibliographystyle{splncs04}
 \bibliography{ref}
