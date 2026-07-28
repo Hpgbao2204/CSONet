@@ -1,0 +1,25 @@
+{
+  "config": {
+    "seed": 26072026,
+    "compiler_version": "0.8.30",
+    "solver_timeout_ms": 10000,
+    "warmup_runs": 3,
+    "measured_runs": 30,
+    "fuzz_trials": 128,
+    "ablation_runs": 30,
+    "output_root": "dataset/results"
+  },
+  "config_hash": "8c20621d6aa3001e",
+  "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+  "records": {
+    "full": 5400,
+    "ablation": 37800,
+    "oz": 120,
+    "fuzz": 120
+  },
+  "limitations": [
+    "DifferentialFuzz is a deterministic bounded baseline, not Forge's built-in fuzzer.",
+    "SMT models are first checked by an independent interpreter and then replayed separately on Foundry Anvil.",
+    "The behavioral checker is sound only for the documented generated Solidity subset."
+  ]
+}

@@ -1,0 +1,121 @@
+pair_id,method,expected_verdict,safety_category,mutation_operator,verdict,runtime_ms,counterexample
+tokenledger_safe_01_append_state_variable,DifferentialFuzz-128,Safe,safe,append_state_variable,Safe,0.0,
+tokenledger_safe_02_add_function,DifferentialFuzz-128,Safe,safe,add_function,Safe,0.0,
+tokenledger_safe_03_add_event,DifferentialFuzz-128,Safe,safe,add_event,Safe,0.0,
+tokenledger_unsafe_behavior_01_arithmetic_operator_change,DifferentialFuzz-128,Unsafe,behavior,arithmetic_operator_change,Unsafe,0.4924,"{""active"": true, ""amount"": 33238, ""balance"": 100766, ""call_ok"": true, ""limit"": 50154, ""owner_zero"": true, ""sender_owner"": true, ""total"": 1001586}"
+tokenledger_unsafe_behavior_02_comparison_operator_change,DifferentialFuzz-128,Unsafe,behavior,comparison_operator_change,Safe,1.4076,
+tokenledger_unsafe_behavior_03_omit_state_update,DifferentialFuzz-128,Unsafe,behavior,omit_state_update,Unsafe,0.3205,"{""active"": true, ""amount"": 56075, ""balance"": 624019, ""call_ok"": false, ""limit"": 60580, ""owner_zero"": true, ""sender_owner"": false, ""total"": 883878}"
+tokenrewards_safe_01_rename_internal_state_variable,DifferentialFuzz-128,Safe,safe,rename_internal_state_variable,Safe,0.0,
+tokenrewards_safe_02_rename_local_variable,DifferentialFuzz-128,Safe,safe,rename_local_variable,Safe,1.4813,
+tokenrewards_safe_03_equivalent_expression_refactor,DifferentialFuzz-128,Safe,safe,equivalent_expression_refactor,Safe,1.3641,
+tokenrewards_unsafe_behavior_01_wrong_state_variable,DifferentialFuzz-128,Unsafe,behavior,wrong_state_variable,Unsafe,0.2946,"{""active"": true, ""amount"": 4396, ""balance"": 785186, ""call_ok"": false, ""limit"": 8067, ""owner_zero"": true, ""sender_owner"": false, ""total"": 323522}"
+tokenrewards_unsafe_behavior_02_return_value_change,DifferentialFuzz-128,Unsafe,behavior,return_value_change,Unsafe,0.6186,"{""active"": true, ""amount"": 7041, ""balance"": 1029324, ""call_ok"": false, ""limit"": 39684, ""owner_zero"": false, ""sender_owner"": false, ""total"": 57703}"
+tokenrewards_unsafe_behavior_03_omit_event,DifferentialFuzz-128,Unsafe,behavior,omit_event,Unsafe,0.3903,"{""active"": true, ""amount"": 50601, ""balance"": 519948, ""call_ok"": true, ""limit"": 55781, ""owner_zero"": false, ""sender_owner"": false, ""total"": 881062}"
+vaultguard_safe_01_extract_internal_function,DifferentialFuzz-128,Safe,safe,extract_internal_function,Safe,1.4822,
+vaultguard_safe_02_commute_independent_writes,DifferentialFuzz-128,Safe,safe,commute_independent_writes,Safe,2.0688,
+vaultguard_safe_03_valid_domain_guard,DifferentialFuzz-128,Safe,safe,valid_domain_guard,Safe,2.0861,
+vaultguard_unsafe_behavior_01_remove_require,DifferentialFuzz-128,Unsafe,behavior,remove_require,Unsafe,0.2747,"{""active"": false, ""amount"": 44396, ""balance"": 659068, ""call_ok"": false, ""limit"": 59339, ""owner_zero"": true, ""sender_owner"": false, ""total"": 892318}"
+vaultguard_unsafe_behavior_02_change_revert_condition,DifferentialFuzz-128,Unsafe,behavior,change_revert_condition,Unsafe,0.3475,"{""active"": true, ""amount"": 20820, ""balance"": 705849, ""call_ok"": true, ""limit"": 28266, ""owner_zero"": false, ""sender_owner"": false, ""total"": 780366}"
+vaultguard_unsafe_behavior_03_remove_access_modifier,DifferentialFuzz-128,Unsafe,behavior,remove_access_modifier,Unsafe,0.3375,"{""active"": false, ""amount"": 5025, ""balance"": 665132, ""call_ok"": true, ""limit"": 38629, ""owner_zero"": false, ""sender_owner"": false, ""total"": 517190}"
+yieldvault_safe_01_consume_storage_gap,DifferentialFuzz-128,Safe,safe,consume_storage_gap,Safe,0.0,
+yieldvault_safe_02_append_state_variable,DifferentialFuzz-128,Safe,safe,append_state_variable,Safe,0.0,
+yieldvault_safe_03_add_function,DifferentialFuzz-128,Safe,safe,add_function,Safe,0.0,
+yieldvault_unsafe_behavior_01_change_call_recipient,DifferentialFuzz-128,Unsafe,behavior,change_call_recipient,Unsafe,0.5078,"{""active"": false, ""amount"": 63619, ""balance"": 387701, ""call_ok"": true, ""limit"": 20391, ""owner_zero"": false, ""sender_owner"": true, ""total"": 586819}"
+yieldvault_unsafe_behavior_02_external_call_order_change,DifferentialFuzz-128,Unsafe,behavior,external_call_order_change,Unsafe,0.553,"{""active"": true, ""amount"": 37665, ""balance"": 760643, ""call_ok"": true, ""limit"": 23993, ""owner_zero"": true, ""sender_owner"": true, ""total"": 781467}"
+yieldvault_unsafe_behavior_03_success_to_revert,DifferentialFuzz-128,Unsafe,behavior,success_to_revert,Unsafe,0.3085,"{""active"": true, ""amount"": 36729, ""balance"": 89861, ""call_ok"": false, ""limit"": 50385, ""owner_zero"": true, ""sender_owner"": true, ""total"": 510270}"
+stakepool_safe_01_rename_internal_state_variable,DifferentialFuzz-128,Safe,safe,rename_internal_state_variable,Safe,0.0,
+stakepool_safe_02_rename_local_variable,DifferentialFuzz-128,Safe,safe,rename_local_variable,Safe,1.9119,
+stakepool_safe_03_equivalent_expression_refactor,DifferentialFuzz-128,Safe,safe,equivalent_expression_refactor,Safe,1.9639,
+stakepool_unsafe_behavior_01_conditional_state_update,DifferentialFuzz-128,Unsafe,behavior,conditional_state_update,Safe,1.5697,
+stakepool_unsafe_behavior_02_conditional_event,DifferentialFuzz-128,Unsafe,behavior,conditional_event,Safe,1.8316,
+stakepool_unsafe_behavior_03_revert_data_change,DifferentialFuzz-128,Unsafe,behavior,revert_data_change,Safe,2.0692,
+delegatedstake_safe_01_equivalent_expression_refactor,DifferentialFuzz-128,Safe,safe,equivalent_expression_refactor,Safe,1.4516,
+delegatedstake_safe_02_extract_internal_function,DifferentialFuzz-128,Safe,safe,extract_internal_function,Safe,1.5851,
+delegatedstake_safe_03_commute_independent_writes,DifferentialFuzz-128,Safe,safe,commute_independent_writes,Safe,2.1477,
+delegatedstake_unsafe_behavior_01_unsupported_hash_return,DifferentialFuzz-128,Unsafe,behavior,unsupported_hash_return,Unknown,0.4994,
+delegatedstake_unsafe_behavior_02_arithmetic_operator_change,DifferentialFuzz-128,Unsafe,behavior,arithmetic_operator_change,Unsafe,0.6765,"{""active"": true, ""amount"": 57561, ""balance"": 295713, ""call_ok"": false, ""limit"": 58147, ""owner_zero"": false, ""sender_owner"": true, ""total"": 626353}"
+delegatedstake_unsafe_behavior_03_comparison_operator_change,DifferentialFuzz-128,Unsafe,behavior,comparison_operator_change,Safe,2.6018,
+ballotbox_safe_01_append_state_variable,DifferentialFuzz-128,Safe,safe,append_state_variable,Safe,0.0,
+ballotbox_safe_02_add_function,DifferentialFuzz-128,Safe,safe,add_function,Safe,0.0,
+ballotbox_safe_03_add_event,DifferentialFuzz-128,Safe,safe,add_event,Safe,0.0,
+ballotbox_unsafe_behavior_01_omit_state_update,DifferentialFuzz-128,Unsafe,behavior,omit_state_update,Unsafe,0.5045,"{""active"": true, ""amount"": 47323, ""balance"": 959788, ""call_ok"": false, ""limit"": 63266, ""owner_zero"": false, ""sender_owner"": false, ""total"": 666682}"
+ballotbox_unsafe_behavior_02_wrong_state_variable,DifferentialFuzz-128,Unsafe,behavior,wrong_state_variable,Unsafe,0.3771,"{""active"": true, ""amount"": 1230, ""balance"": 942016, ""call_ok"": false, ""limit"": 63026, ""owner_zero"": true, ""sender_owner"": false, ""total"": 1029279}"
+ballotbox_unsafe_behavior_03_return_value_change,DifferentialFuzz-128,Unsafe,behavior,return_value_change,Unsafe,0.4306,"{""active"": true, ""amount"": 9724, ""balance"": 743064, ""call_ok"": false, ""limit"": 39395, ""owner_zero"": true, ""sender_owner"": false, ""total"": 239763}"
+governancevote_safe_01_add_function,DifferentialFuzz-128,Safe,safe,add_function,Safe,0.0,
+governancevote_safe_02_add_event,DifferentialFuzz-128,Safe,safe,add_event,Safe,0.0,
+governancevote_safe_03_rename_internal_state_variable,DifferentialFuzz-128,Safe,safe,rename_internal_state_variable,Safe,0.0,
+governancevote_unsafe_behavior_01_omit_event,DifferentialFuzz-128,Unsafe,behavior,omit_event,Unsafe,0.5482,"{""active"": true, ""amount"": 32623, ""balance"": 422006, ""call_ok"": false, ""limit"": 47846, ""owner_zero"": false, ""sender_owner"": true, ""total"": 155223}"
+governancevote_unsafe_behavior_02_remove_require,DifferentialFuzz-128,Unsafe,behavior,remove_require,Unsafe,0.5126,"{""active"": false, ""amount"": 1105, ""balance"": 828273, ""call_ok"": false, ""limit"": 17617, ""owner_zero"": true, ""sender_owner"": false, ""total"": 388533}"
+governancevote_unsafe_behavior_03_change_revert_condition,DifferentialFuzz-128,Unsafe,behavior,change_revert_condition,Unsafe,0.3622,"{""active"": true, ""amount"": 17928, ""balance"": 385203, ""call_ok"": false, ""limit"": 28050, ""owner_zero"": false, ""sender_owner"": true, ""total"": 687353}"
+assetregistry_safe_01_extract_internal_function,DifferentialFuzz-128,Safe,safe,extract_internal_function,Safe,1.3131,
+assetregistry_safe_02_commute_independent_writes,DifferentialFuzz-128,Safe,safe,commute_independent_writes,Safe,1.423,
+assetregistry_safe_03_valid_domain_guard,DifferentialFuzz-128,Safe,safe,valid_domain_guard,Safe,1.799,
+assetregistry_unsafe_behavior_01_remove_access_modifier,DifferentialFuzz-128,Unsafe,behavior,remove_access_modifier,Unsafe,0.4719,"{""active"": false, ""amount"": 13625, ""balance"": 558652, ""call_ok"": true, ""limit"": 5769, ""owner_zero"": true, ""sender_owner"": false, ""total"": 559781}"
+assetregistry_unsafe_behavior_02_change_call_recipient,DifferentialFuzz-128,Unsafe,behavior,change_call_recipient,Unsafe,0.4106,"{""active"": false, ""amount"": 21963, ""balance"": 762141, ""call_ok"": true, ""limit"": 63058, ""owner_zero"": false, ""sender_owner"": true, ""total"": 648386}"
+assetregistry_unsafe_behavior_03_external_call_order_change,DifferentialFuzz-128,Unsafe,behavior,external_call_order_change,Unsafe,0.4018,"{""active"": false, ""amount"": 8466, ""balance"": 105724, ""call_ok"": true, ""limit"": 25013, ""owner_zero"": true, ""sender_owner"": true, ""total"": 527601}"
+claimregistry_safe_01_commute_independent_writes,DifferentialFuzz-128,Safe,safe,commute_independent_writes,Safe,1.6832,
+claimregistry_safe_02_valid_domain_guard,DifferentialFuzz-128,Safe,safe,valid_domain_guard,Safe,2.5756,
+claimregistry_safe_03_consume_storage_gap,DifferentialFuzz-128,Safe,safe,consume_storage_gap,Safe,0.0,
+claimregistry_unsafe_behavior_01_success_to_revert,DifferentialFuzz-128,Unsafe,behavior,success_to_revert,Unsafe,0.459,"{""active"": true, ""amount"": 6308, ""balance"": 26185, ""call_ok"": false, ""limit"": 26848, ""owner_zero"": true, ""sender_owner"": false, ""total"": 388683}"
+claimregistry_unsafe_behavior_02_conditional_state_update,DifferentialFuzz-128,Unsafe,behavior,conditional_state_update,Safe,1.536,
+claimregistry_unsafe_behavior_03_conditional_event,DifferentialFuzz-128,Unsafe,behavior,conditional_event,Safe,1.1518,
+rolemanager_safe_01_rename_internal_state_variable,DifferentialFuzz-128,Safe,safe,rename_internal_state_variable,Safe,0.0,
+rolemanager_safe_02_rename_local_variable,DifferentialFuzz-128,Safe,safe,rename_local_variable,Safe,1.5058,
+rolemanager_safe_03_equivalent_expression_refactor,DifferentialFuzz-128,Safe,safe,equivalent_expression_refactor,Safe,1.5224,
+rolemanager_unsafe_behavior_01_revert_data_change,DifferentialFuzz-128,Unsafe,behavior,revert_data_change,Safe,1.7146,
+rolemanager_unsafe_behavior_02_unsupported_hash_return,DifferentialFuzz-128,Unsafe,behavior,unsupported_hash_return,Unknown,0.3551,
+rolemanager_unsafe_behavior_03_arithmetic_operator_change,DifferentialFuzz-128,Unsafe,behavior,arithmetic_operator_change,Unsafe,0.3639,"{""active"": true, ""amount"": 12153, ""balance"": 855402, ""call_ok"": true, ""limit"": 25009, ""owner_zero"": true, ""sender_owner"": true, ""total"": 596222}"
+permissionbook_safe_01_rename_internal_state_variable,DifferentialFuzz-128,Safe,safe,rename_internal_state_variable,Safe,0.0,
+permissionbook_safe_02_rename_local_variable,DifferentialFuzz-128,Safe,safe,rename_local_variable,Safe,1.788,
+permissionbook_safe_03_equivalent_expression_refactor,DifferentialFuzz-128,Safe,safe,equivalent_expression_refactor,Safe,1.4641,
+permissionbook_unsafe_behavior_01_comparison_operator_change,DifferentialFuzz-128,Unsafe,behavior,comparison_operator_change,Safe,1.5158,
+permissionbook_unsafe_behavior_02_omit_state_update,DifferentialFuzz-128,Unsafe,behavior,omit_state_update,Unsafe,0.3227,"{""active"": true, ""amount"": 40260, ""balance"": 619556, ""call_ok"": false, ""limit"": 50351, ""owner_zero"": true, ""sender_owner"": false, ""total"": 410175}"
+permissionbook_unsafe_behavior_03_wrong_state_variable,DifferentialFuzz-128,Unsafe,behavior,wrong_state_variable,Unsafe,0.3284,"{""active"": true, ""amount"": 31145, ""balance"": 658091, ""call_ok"": false, ""limit"": 58783, ""owner_zero"": true, ""sender_owner"": false, ""total"": 104807}"
+escrowdesk_safe_01_append_state_variable,DifferentialFuzz-128,Safe,safe,append_state_variable,Safe,0.0,
+escrowdesk_safe_02_add_function,DifferentialFuzz-128,Safe,safe,add_function,Safe,0.0,
+escrowdesk_safe_03_add_event,DifferentialFuzz-128,Safe,safe,add_event,Safe,0.0,
+escrowdesk_unsafe_behavior_01_return_value_change,DifferentialFuzz-128,Unsafe,behavior,return_value_change,Unsafe,0.4315,"{""active"": true, ""amount"": 26483, ""balance"": 83874, ""call_ok"": true, ""limit"": 42394, ""owner_zero"": true, ""sender_owner"": true, ""total"": 261450}"
+escrowdesk_unsafe_behavior_02_omit_event,DifferentialFuzz-128,Unsafe,behavior,omit_event,Unsafe,0.3596,"{""active"": true, ""amount"": 10246, ""balance"": 380023, ""call_ok"": true, ""limit"": 37182, ""owner_zero"": true, ""sender_owner"": false, ""total"": 442576}"
+escrowdesk_unsafe_behavior_03_remove_require,DifferentialFuzz-128,Unsafe,behavior,remove_require,Unsafe,0.2315,"{""active"": false, ""amount"": 4153, ""balance"": 857617, ""call_ok"": true, ""limit"": 11184, ""owner_zero"": false, ""sender_owner"": true, ""total"": 289062}"
+milestoneescrow_safe_01_consume_storage_gap,DifferentialFuzz-128,Safe,safe,consume_storage_gap,Safe,0.0,
+milestoneescrow_safe_02_append_state_variable,DifferentialFuzz-128,Safe,safe,append_state_variable,Safe,0.0,
+milestoneescrow_safe_03_add_function,DifferentialFuzz-128,Safe,safe,add_function,Safe,0.0,
+milestoneescrow_unsafe_behavior_01_change_revert_condition,DifferentialFuzz-128,Unsafe,behavior,change_revert_condition,Unsafe,0.2565,"{""active"": true, ""amount"": 38499, ""balance"": 406476, ""call_ok"": false, ""limit"": 2547, ""owner_zero"": false, ""sender_owner"": true, ""total"": 514163}"
+milestoneescrow_unsafe_behavior_02_remove_access_modifier,DifferentialFuzz-128,Unsafe,behavior,remove_access_modifier,Unsafe,0.6412,"{""active"": true, ""amount"": 31402, ""balance"": 1027753, ""call_ok"": true, ""limit"": 17242, ""owner_zero"": false, ""sender_owner"": false, ""total"": 820199}"
+milestoneescrow_unsafe_behavior_03_change_call_recipient,DifferentialFuzz-128,Unsafe,behavior,change_call_recipient,Unsafe,0.4201,"{""active"": false, ""amount"": 40451, ""balance"": 344850, ""call_ok"": true, ""limit"": 64517, ""owner_zero"": false, ""sender_owner"": true, ""total"": 308648}"
+crowdfund_safe_01_extract_internal_function,DifferentialFuzz-128,Safe,safe,extract_internal_function,Safe,1.2443,
+crowdfund_safe_02_commute_independent_writes,DifferentialFuzz-128,Safe,safe,commute_independent_writes,Safe,1.2415,
+crowdfund_safe_03_valid_domain_guard,DifferentialFuzz-128,Safe,safe,valid_domain_guard,Safe,1.6159,
+crowdfund_unsafe_behavior_01_external_call_order_change,DifferentialFuzz-128,Unsafe,behavior,external_call_order_change,Unsafe,0.5072,"{""active"": true, ""amount"": 29692, ""balance"": 830448, ""call_ok"": true, ""limit"": 37001, ""owner_zero"": true, ""sender_owner"": true, ""total"": 466843}"
+crowdfund_unsafe_behavior_02_success_to_revert,DifferentialFuzz-128,Unsafe,behavior,success_to_revert,Unsafe,0.6104,"{""active"": true, ""amount"": 23347, ""balance"": 149348, ""call_ok"": true, ""limit"": 61342, ""owner_zero"": true, ""sender_owner"": true, ""total"": 1014626}"
+crowdfund_unsafe_behavior_03_conditional_state_update,DifferentialFuzz-128,Unsafe,behavior,conditional_state_update,Safe,2.3128,
+campaignvault_safe_01_equivalent_expression_refactor,DifferentialFuzz-128,Safe,safe,equivalent_expression_refactor,Safe,1.7908,
+campaignvault_safe_02_extract_internal_function,DifferentialFuzz-128,Safe,safe,extract_internal_function,Safe,1.7941,
+campaignvault_safe_03_commute_independent_writes,DifferentialFuzz-128,Safe,safe,commute_independent_writes,Safe,1.2907,
+campaignvault_unsafe_behavior_01_conditional_event,DifferentialFuzz-128,Unsafe,behavior,conditional_event,Safe,1.2286,
+campaignvault_unsafe_behavior_02_revert_data_change,DifferentialFuzz-128,Unsafe,behavior,revert_data_change,Safe,1.1495,
+campaignvault_unsafe_behavior_03_unsupported_hash_return,DifferentialFuzz-128,Unsafe,behavior,unsupported_hash_return,Unknown,0.2518,
+markethub_safe_01_rename_internal_state_variable,DifferentialFuzz-128,Safe,safe,rename_internal_state_variable,Safe,0.0,
+markethub_safe_02_rename_local_variable,DifferentialFuzz-128,Safe,safe,rename_local_variable,Safe,2.1057,
+markethub_safe_03_equivalent_expression_refactor,DifferentialFuzz-128,Safe,safe,equivalent_expression_refactor,Safe,1.4848,
+markethub_unsafe_behavior_01_arithmetic_operator_change,DifferentialFuzz-128,Unsafe,behavior,arithmetic_operator_change,Unsafe,0.4419,"{""active"": true, ""amount"": 26878, ""balance"": 972296, ""call_ok"": false, ""limit"": 56211, ""owner_zero"": false, ""sender_owner"": true, ""total"": 238184}"
+markethub_unsafe_behavior_02_comparison_operator_change,DifferentialFuzz-128,Unsafe,behavior,comparison_operator_change,Safe,1.1404,
+markethub_unsafe_behavior_03_omit_state_update,DifferentialFuzz-128,Unsafe,behavior,omit_state_update,Unsafe,0.2407,"{""active"": true, ""amount"": 41956, ""balance"": 1006256, ""call_ok"": false, ""limit"": 47462, ""owner_zero"": false, ""sender_owner"": false, ""total"": 64132}"
+listingmarket_safe_01_add_function,DifferentialFuzz-128,Safe,safe,add_function,Safe,0.0,
+listingmarket_safe_02_add_event,DifferentialFuzz-128,Safe,safe,add_event,Safe,0.0,
+listingmarket_safe_03_rename_internal_state_variable,DifferentialFuzz-128,Safe,safe,rename_internal_state_variable,Safe,0.0,
+listingmarket_unsafe_behavior_01_wrong_state_variable,DifferentialFuzz-128,Unsafe,behavior,wrong_state_variable,Unsafe,0.367,"{""active"": true, ""amount"": 2584, ""balance"": 612227, ""call_ok"": false, ""limit"": 27369, ""owner_zero"": true, ""sender_owner"": false, ""total"": 363127}"
+listingmarket_unsafe_behavior_02_return_value_change,DifferentialFuzz-128,Unsafe,behavior,return_value_change,Unsafe,0.3499,"{""active"": true, ""amount"": 11871, ""balance"": 512632, ""call_ok"": true, ""limit"": 41993, ""owner_zero"": false, ""sender_owner"": false, ""total"": 762472}"
+listingmarket_unsafe_behavior_03_omit_event,DifferentialFuzz-128,Unsafe,behavior,omit_event,Unsafe,0.2957,"{""active"": true, ""amount"": 25685, ""balance"": 909886, ""call_ok"": true, ""limit"": 48299, ""owner_zero"": true, ""sender_owner"": false, ""total"": 1046811}"
+rewardpool_safe_01_append_state_variable,DifferentialFuzz-128,Safe,safe,append_state_variable,Safe,0.0,
+rewardpool_safe_02_add_function,DifferentialFuzz-128,Safe,safe,add_function,Safe,0.0,
+rewardpool_safe_03_add_event,DifferentialFuzz-128,Safe,safe,add_event,Safe,0.0,
+rewardpool_unsafe_behavior_01_remove_require,DifferentialFuzz-128,Unsafe,behavior,remove_require,Unsafe,0.3604,"{""active"": false, ""amount"": 4085, ""balance"": 398610, ""call_ok"": false, ""limit"": 20907, ""owner_zero"": true, ""sender_owner"": false, ""total"": 480802}"
+rewardpool_unsafe_behavior_02_change_revert_condition,DifferentialFuzz-128,Unsafe,behavior,change_revert_condition,Unsafe,0.4363,"{""active"": true, ""amount"": 40657, ""balance"": 298959, ""call_ok"": false, ""limit"": 13698, ""owner_zero"": true, ""sender_owner"": true, ""total"": 333098}"
+rewardpool_unsafe_behavior_03_remove_access_modifier,DifferentialFuzz-128,Unsafe,behavior,remove_access_modifier,Unsafe,0.4021,"{""active"": false, ""amount"": 61951, ""balance"": 139423, ""call_ok"": true, ""limit"": 9922, ""owner_zero"": true, ""sender_owner"": false, ""total"": 657951}"
+incentivevault_safe_01_commute_independent_writes,DifferentialFuzz-128,Safe,safe,commute_independent_writes,Safe,1.4792,
+incentivevault_safe_02_valid_domain_guard,DifferentialFuzz-128,Safe,safe,valid_domain_guard,Safe,1.3882,
+incentivevault_safe_03_consume_storage_gap,DifferentialFuzz-128,Safe,safe,consume_storage_gap,Safe,0.0,
+incentivevault_unsafe_behavior_01_change_call_recipient,DifferentialFuzz-128,Unsafe,behavior,change_call_recipient,Unsafe,0.3448,"{""active"": false, ""amount"": 19092, ""balance"": 395626, ""call_ok"": true, ""limit"": 4079, ""owner_zero"": true, ""sender_owner"": true, ""total"": 455355}"
+incentivevault_unsafe_behavior_02_external_call_order_change,DifferentialFuzz-128,Unsafe,behavior,external_call_order_change,Unsafe,0.3109,"{""active"": true, ""amount"": 14257, ""balance"": 288920, ""call_ok"": true, ""limit"": 10582, ""owner_zero"": false, ""sender_owner"": true, ""total"": 58460}"
+incentivevault_unsafe_behavior_03_success_to_revert,DifferentialFuzz-128,Unsafe,behavior,success_to_revert,Unsafe,0.2801,"{""active"": true, ""amount"": 4855, ""balance"": 193567, ""call_ok"": true, ""limit"": 15705, ""owner_zero"": false, ""sender_owner"": false, ""total"": 619944}"
