@@ -59,7 +59,7 @@ BEHAVIOR_ORDER = ["Arithmetic", "State", "Events", "Access"]
 BEHAVIOR_DISPLAY = ["Arith.", "State", "Event", "Access"]
 
 METHODS = [
-    ("Full", "CSO"),
+    ("Full", "UG"),
     ("NameOnly", "ID"),
     ("SlotOffsetType", "S+T"),
     ("NoStorageType", r"$-\tau$"),
@@ -161,40 +161,38 @@ def storage_records(include_safe: bool = False) -> pd.DataFrame:
 def panel_1a_storage_profile() -> None:
     data = storage_records()
     data["detected"] = data["verdict"].eq("Unsafe").astype(int)
-    operator_order = list(STORAGE_GROUP)
-    detected = (
-        data.groupby(["method", "mutation_operator"])["detected"]
-        .sum()
-        .unstack(fill_value=0)
-        .reindex(index=ALL_METHOD_LABELS, columns=operator_order, fill_value=0)
+    family_order = ["Types", "Assembly", "Roots", "Declarations"]
+    grouped = data.groupby(["method", "storage_class"])["detected"].agg(
+        ["sum", "count"]
     )
     fig, ax = plt.subplots(figsize=(6.4, 6.4))
-    x = np.arange(1, len(operator_order) + 1)
+    x = np.arange(len(family_order) + 1)
     colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
     profiles = [
-        ("CSO", "CSO", "o", colors[0]),
+        ("UG", "UG", "o", colors[0]),
         ("ID", "ID", "s", colors[1]),
         (r"$-\tau$", r"$-\tau$", "D", colors[3]),
-        ("OZ", "S+T/OZ", "v", colors[4]),
+        ("S+T", "S+T/OZ", "v", colors[4]),
     ]
     for source, label, marker, color in profiles:
+        family_values = []
+        for storage_class in family_order:
+            row = grouped.loc[(source, storage_class)]
+            family_values.append((row["sum"] + 0.5) / (row["count"] + 1))
+        part = data.loc[data["method"].eq(source), "detected"]
+        overall = (part.sum() + 0.5) / (len(part) + 1)
         smooth_profile(
             ax,
             x,
-            detected.loc[source].cumsum().to_numpy(dtype=float),
+            np.asarray(family_values + [overall], dtype=float),
             color=color,
             marker=marker,
             label=label,
         )
-    boundaries = np.cumsum(
-        [sum(group == storage_class for group in STORAGE_GROUP.values())
-         for storage_class in STORAGE_ORDER]
-    )
-    for boundary in boundaries[:-1]:
-        ax.axvline(boundary + 0.5, color="0.78", linestyle=":", linewidth=0.9)
-    ax.set_xticks([1, 3, 5, 7, 9, 11])
-    axes_style(ax, "Storage-operator rank", "Cumulative detected cases")
-    ax.legend(ncol=2, loc="upper left", frameon=True)
+    ax.set_xticks(x, ["Type", "Assembly", "Root", "Decl.", "Overall"])
+    ax.set_ylim(0.01, 1.02)
+    axes_style(ax, "Storage-mutation family", "Posterior detection rate")
+    ax.legend(ncol=2, loc="lower center", frameon=True)
     save(fig, "figure_storage_1a_profile.pdf")
 
 
@@ -500,7 +498,7 @@ def panel_2c_replay_quantiles() -> None:
 
 
 def panel_2d_evidence_profiles() -> None:
-    """Plot smooth semantic profiles over independently replayed evidence."""
+    """Plot posterior support of each replay channel across semantic classes."""
     replay = pd.read_csv(RAW / "evm_replay.csv")
     dimensions = [("status_or_return", "Return"), ("transaction_status", "Tx"),
                   ("events", "Event"), ("storage", "Storage"),
@@ -522,25 +520,30 @@ def panel_2d_evidence_profiles() -> None:
     counts = evidence.groupby("semantic_class")[
         [key for key, _ in dimensions]
     ].sum().reindex(BEHAVIOR_ORDER)
+    totals = evidence.groupby("semantic_class").size().reindex(BEHAVIOR_ORDER)
 
     fig, ax = plt.subplots(figsize=(6.4, 6.4))
     colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
-    x = np.arange(len(dimensions))
-    for idx, semantic_class in enumerate(BEHAVIOR_ORDER):
-        values = counts.loc[
-            semantic_class, [key for key, _label in dimensions]
-        ].to_numpy(dtype=float)
+    x = np.arange(len(BEHAVIOR_ORDER))
+    markers = ["o", "s", "^", "D", "v"]
+    for idx, (channel, display) in enumerate(dimensions):
+        values = (
+            counts[channel].to_numpy(dtype=float) + 0.5
+        ) / (totals.to_numpy(dtype=float) + 1.0)
         smooth_profile(
             ax,
             x,
             values,
             color=colors[idx],
-            marker=["o", "s", "^", "D"][idx],
-            label=BEHAVIOR_DISPLAY[idx],
+            marker=markers[idx],
+            label={"Return": "Ret.", "Event": "Evt.", "Storage": "Sto."}.get(
+                display, display
+            ),
         )
-    ax.set_xticks(x, [label for _key, label in dimensions])
-    axes_style(ax, "Observable channel", "Validated counterexamples")
-    ax.legend(ncol=2, loc="upper right", frameon=True)
+    ax.set_xticks(x, BEHAVIOR_DISPLAY)
+    ax.set_ylim(0.01, 1.02)
+    axes_style(ax, "Semantic class", "Posterior evidence support")
+    ax.legend(ncol=3, loc="upper center", frameon=True)
     save(fig, "figure_behavior_2d_observables.pdf")
 
 
@@ -711,7 +714,7 @@ def diagnostics_3c_replay_intervals() -> None:
 def diagnostics_3d_ablation_profiles() -> None:
     data = pd.read_csv(SUMMARY / "ablation_summary.csv").set_index("variant")
     variants = [
-        ("Full", "CSO"),
+        ("Full", "UG"),
         ("NameOnly", "ID"),
         ("NoBehavior", r"$-\mathrm{Beh.}$"),
         ("NoStorageType", r"$-\tau$"),
@@ -978,14 +981,14 @@ def main() -> None:
         "font_size_pt": 18,
         "style": "Matplotlib default typography and color cycle",
         "panel_types": {
-            "1a": "shape-preserving cumulative detection profiles",
+            "1a": "shape-preserving posterior mutation-family profiles",
             "1b": "connected multi-metric method profile",
             "1c": "log-time Gaussian kernel density",
             "1d": "connected evidence profile",
             "2a": "connected detection profile with aggregate inset",
             "2b": "Gaussian kernel density",
             "2c": "connected replay quantile profile",
-            "2d": "shape-preserving replay-evidence profiles",
+            "2d": "shape-preserving posterior replay-evidence profiles",
             "scaling-a": "obligation scaling with interquartile band and inset",
             "scaling-b": "symbolic-path scaling with binned medians and OLS trend",
             "3a": "pipeline-stage mean, median, and p05--p95 intervals",

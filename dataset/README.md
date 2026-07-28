@@ -71,13 +71,18 @@ trial budgets 16, 32, 64, and 128. It is retained as a supplementary
 sensitivity result even though the final four-figure paper layout does not
 use a budget panel.
 
-The figure generator emits ten independent square vector PDFs. Storage panels
-1a--1d and behavior panels 2a--2d are assembled as two four-panel figures in
-Overleaf; the obligation and symbolic-path scalability plots are separate
-large figures. All panels use 18-point Matplotlib-default typography. Connected
-profiles, quantile curves, and an UpSet-style incidence matrix replace
-isolated-point summaries. Timing densities use Gaussian KDE with Scott's
-bandwidth; the generator never changes a measured value or categorical
+The figure generator emits fourteen independent square vector PDFs. The first
+experimental figure assembles storage panels 1a--1d and behavior panels 2a--2d
+in a two-by-four layout. The second combines the obligation and symbolic-path
+scalability panels. The third assembles diagnostic panels 3a--3d in a two-by-two
+layout. All panels use 18-point Matplotlib-default typography.
+
+Panels 1a and 2d connect Jeffreys posterior estimates, while panel 3d connects
+exact aggregate metrics, using shape-preserving cubic profiles. The
+interpolation is only a visual guide and cannot overshoot the marked range.
+Panels 3a--3c report connected distribution summaries with median, mean, and
+5th--95th percentile intervals. Timing densities use Gaussian KDE with Scott's
+bandwidth. The generator never changes a measured value or categorical
 outcome.
 
 ## Statistical protocol
