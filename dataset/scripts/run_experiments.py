@@ -41,6 +41,8 @@ def classification_metrics(frame: pd.DataFrame) -> dict[str, float | int]:
     fn = int((expected_unsafe & ~predicted_unsafe).sum())
     precision = tp / (tp + fp) if tp + fp else 0.0
     recall = tp / (tp + fn) if tp + fn else 0.0
+    decided = predicted_unsafe | decided_safe
+    correct = (expected_unsafe & predicted_unsafe) | (~expected_unsafe & decided_safe)
     return {
         "tp": tp,
         "tn": tn,
@@ -53,12 +55,9 @@ def classification_metrics(frame: pd.DataFrame) -> dict[str, float | int]:
         "false_negative_rate": fn / (fn + tp) if fn + tp else 0.0,
         "unknown_rate": float(frame["verdict"].eq("Unknown").mean()),
         "timeout_rate": float(frame["verdict"].eq("Timeout").mean()),
-        "accuracy": float(
-            (
-                (expected_unsafe & predicted_unsafe)
-                | (~expected_unsafe & decided_safe)
-            ).mean()
-        ),
+        "accuracy": float(correct.mean()),
+        "coverage": float(decided.mean()),
+        "decided_accuracy": float(correct[decided].mean()) if decided.any() else 0.0,
     }
 
 
@@ -142,7 +141,8 @@ def summarize_full(frame: pd.DataFrame, summary_dir: Path) -> None:
         "storage_analysis_ms",
         "function_mapping_ms",
         "product_program_ms",
-        "counterexample_replay_ms",
+        "solver_ms",
+        "summary_validation_ms",
         "total_runtime_ms",
     ]
     for (category, stage), group in (
@@ -198,6 +198,64 @@ def summarize_full(frame: pd.DataFrame, summary_dir: Path) -> None:
         )
     pd.DataFrame(operator_rows).to_csv(
         summary_dir / "operator_effectiveness.csv", index=False
+    )
+
+    profiled = frame.copy()
+    profiled["analysis_path"] = np.select(
+        [
+            profiled["verdict"].eq("Unknown"),
+            profiled["layout_issue_count"].gt(0)
+            & profiled["verdict"].eq("Unsafe"),
+            profiled["mapped_functions"].eq(0),
+        ],
+        ["Unknown", "Layout-only", "Skipped"],
+        default="Behavioral",
+    )
+    profile_rows = []
+    for path, group in profiled.groupby("analysis_path"):
+        first = group.loc[group["run_id"].eq(group["run_id"].min())]
+        profile_rows.append(
+            {
+                "analysis_path": path,
+                "pairs": int(first["pair_id"].nunique()),
+                "observations": len(group),
+                "median_ms": float(group["total_runtime_ms"].median()),
+                "q1_ms": percentile(group["total_runtime_ms"], 25),
+                "q3_ms": percentile(group["total_runtime_ms"], 75),
+                "p95_ms": percentile(group["total_runtime_ms"], 95),
+                "frontend_median_ms": float(
+                    (
+                        group["artifact_extraction_ms"]
+                        + group["storage_analysis_ms"]
+                        + group["function_mapping_ms"]
+                        + group["product_program_ms"]
+                    ).median()
+                ),
+                "smt_median_ms": float(group["solver_ms"].median()),
+                "validation_median_ms": float(
+                    group["summary_validation_ms"].median()
+                ),
+            }
+        )
+    pd.DataFrame(profile_rows).to_csv(
+        summary_dir / "latency_by_path.csv", index=False
+    )
+
+    verdict_rows = []
+    for verdict, group in frame.groupby("verdict"):
+        first = group.loc[group["run_id"].eq(group["run_id"].min())]
+        verdict_rows.append(
+            {
+                "verdict": verdict,
+                "pairs": int(first["pair_id"].nunique()),
+                "median_ms": float(group["total_runtime_ms"].median()),
+                "q1_ms": percentile(group["total_runtime_ms"], 25),
+                "q3_ms": percentile(group["total_runtime_ms"], 75),
+                "p95_ms": percentile(group["total_runtime_ms"], 95),
+            }
+        )
+    pd.DataFrame(verdict_rows).to_csv(
+        summary_dir / "latency_by_verdict.csv", index=False
     )
 
 
@@ -268,7 +326,10 @@ def main() -> None:
     ablation.to_csv(raw_dir / "ablation_results.csv", index=False)
     ablation_summary = []
     for variant, group in ablation.groupby("variant"):
-        first = group.loc[group["run_id"].eq(1)]
+        first = group.loc[
+            group["run_id"].eq(1)
+            & group["safety_category"].isin(["safe", "storage", "behavior"])
+        ]
         ablation_summary.append(
             {
                 "variant": variant,
@@ -307,6 +368,22 @@ def main() -> None:
     pd.DataFrame(detection_rows).to_csv(
         summary_dir / "detection_effectiveness.csv", index=False
     )
+    mixed = full_first.loc[full_first["safety_category"].eq("mixed")]
+    pd.DataFrame(
+        [
+            {
+                "scope": "mixed",
+                "pairs": len(mixed),
+                **classification_metrics(mixed),
+                **{
+                    f"verdict_{verdict.lower()}": int(
+                        mixed["verdict"].eq(verdict).sum()
+                    )
+                    for verdict in ("Safe", "Unsafe", "Unknown", "Timeout")
+                },
+            }
+        ]
+    ).to_csv(summary_dir / "mixed_effectiveness.csv", index=False)
     run_manifest = {
         "config": config,
         "config_hash": config_hash,

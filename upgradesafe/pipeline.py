@@ -122,6 +122,8 @@ def analyze_pair(
     mapping_ms = (_now() - started) / 1e6
 
     behavior_ms = 0.0
+    behavior_frontend_ms = 0.0
+    behavior_solver_ms = 0.0
     behavior_results: list[dict[str, Any]] = []
     behavior_verdict = "Safe"
     if options.behavior and layout_safe:
@@ -149,6 +151,8 @@ def analyze_pair(
                     timeout_ms=options.solver_timeout_ms,
                 )
             behavior_ms += (_now() - started) / 1e6
+            behavior_frontend_ms += result.frontend_ms
+            behavior_solver_ms += result.solver_ms
             item = {"function": name, **result_as_dict(result)}
             behavior_results.append(item)
             if result.verdict == "Unsafe":
@@ -215,8 +219,10 @@ def analyze_pair(
         "artifact_extraction_ms": artifact_ms,
         "storage_analysis_ms": storage_ms,
         "function_mapping_ms": mapping_ms,
-        "product_program_ms": behavior_ms,
-        "solver_ms": behavior_ms,
+        "product_program_ms": behavior_frontend_ms,
+        "solver_ms": behavior_solver_ms,
+        "behavior_analysis_ms": behavior_ms,
+        "summary_validation_ms": replay_ms,
         "counterexample_replay_ms": replay_ms,
         "total_runtime_ms": total_ms,
         "peak_memory_mb": peak_memory_mb,

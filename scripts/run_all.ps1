@@ -13,6 +13,8 @@ $Python = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 & $Python dataset\scripts\run_fuzz_budget_sweep.py
 & $Python dataset\scripts\run_scalability.py
 & $Python dataset\scripts\replay_counterexamples.py
+& $Python dataset\scripts\validate_safe_cases.py
+& $Python dataset\scripts\analyze_statistics.py
 & $Python dataset\scripts\generate_figures.py
 & $Python dataset\scripts\generate_tables.py
 

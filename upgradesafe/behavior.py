@@ -73,6 +73,8 @@ class EquivalenceResult:
     counterexample: dict[str, Any] | None
     summary_v1: str
     summary_v2: str
+    frontend_ms: float = 0.0
+    solver_ms: float = 0.0
 
 
 def extract_functions(source: str) -> dict[str, FunctionSource]:
@@ -398,40 +400,49 @@ def check_equivalence(
     started = time.perf_counter_ns()
     one, two = summarize(first), summarize(second)
     if not one.supported or not two.supported:
+        elapsed_ms = (time.perf_counter_ns() - started) / 1e6
         return EquivalenceResult(
             "Unknown",
             f"unsupported semantics: {one.unsupported_reason or two.unsupported_reason}",
-            (time.perf_counter_ns() - started) / 1e6,
+            elapsed_ms,
             0,
             0,
             0,
             None,
             one.digest(),
             two.digest(),
+            elapsed_ms,
+            0.0,
         )
     if one.guards == two.guards and one.revert_payloads != two.revert_payloads:
+        elapsed_ms = (time.perf_counter_ns() - started) / 1e6
         return EquivalenceResult(
             "Unknown",
             "revert payload differs and arbitrary revert-data encoding is outside the model",
-            (time.perf_counter_ns() - started) / 1e6,
+            elapsed_ms,
             0,
             0,
             0,
             None,
             one.digest(),
             two.digest(),
+            elapsed_ms,
+            0.0,
         )
     if one == two:
+        elapsed_ms = (time.perf_counter_ns() - started) / 1e6
         return EquivalenceResult(
             "Safe",
             "canonical relational summaries are identical",
-            (time.perf_counter_ns() - started) / 1e6,
+            elapsed_ms,
             0,
             0,
             1,
             None,
             one.digest(),
             two.digest(),
+            elapsed_ms,
+            0.0,
         )
 
     env = {
@@ -467,7 +478,10 @@ def check_equivalence(
         ]
     )
     solver.add(*assumptions)
+    frontend_ms = (time.perf_counter_ns() - started) / 1e6
+    solver_started = time.perf_counter_ns()
     status = solver.check()
+    solver_ms = (time.perf_counter_ns() - solver_started) / 1e6
     runtime_ms = (time.perf_counter_ns() - started) / 1e6
     if status == unknown:
         return EquivalenceResult(
@@ -480,6 +494,8 @@ def check_equivalence(
             None,
             one.digest(),
             two.digest(),
+            frontend_ms,
+            solver_ms,
         )
     if status != sat:
         return EquivalenceResult(
@@ -492,6 +508,8 @@ def check_equivalence(
             None,
             one.digest(),
             two.digest(),
+            frontend_ms,
+            solver_ms,
         )
     model = solver.model()
     counterexample: dict[str, Any] = {}
@@ -504,6 +522,7 @@ def check_equivalence(
         )
     counterexample["v1_success"] = str(model.eval(success_one, model_completion=True)) == "True"
     counterexample["v2_success"] = str(model.eval(success_two, model_completion=True)) == "True"
+    runtime_ms = (time.perf_counter_ns() - started) / 1e6
     return EquivalenceResult(
         "Unsafe",
         "SMT model satisfies the negated relational obligation",
@@ -514,6 +533,8 @@ def check_equivalence(
         counterexample,
         one.digest(),
         two.digest(),
+        frontend_ms,
+        solver_ms,
     )
 
 

@@ -5,7 +5,19 @@
   "warmup_runs": 3,
   "measured_runs": 30,
   "fuzz_trials": 128,
+  "fuzz_budgets": [32, 128, 512, 2048],
+  "fuzz_seeds": 10,
   "ablation_runs": 30,
+  "bootstrap_replicates": 100000,
+  "safe_validation_pairs": 12,
+  "safe_validation_domain": {
+    "amount": [1, 2],
+    "total": [0, 2],
+    "limit": [1, 2],
+    "balance": [0, 2],
+    "active": [false, true],
+    "sender_owner": [false, true]
+  },
+  "scaling_obligations": [1, 2, 5, 10, 20, 30, 40, 50],
   "output_root": "dataset/results"
 }
-

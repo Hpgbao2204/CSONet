@@ -1,0 +1,24 @@
+stage,construct,status,scope
+behavior,straight-line function,Safe-capable,Selected generated entry-point fragment
+behavior,onlyOwner,Safe-capable,Encoded as sender equals owner
+behavior,supported require guards,Safe-capable,"Owner, active, amount, limit, balance, call outcome"
+behavior,simple integer expression,Safe-capable,"Identifier, constant, one addition or subtraction"
+behavior,direct modeled state update,Safe-capable,"Total, limit, supported balance mapping, history append"
+behavior,unconditional event and return,Safe-capable,Payload and order included in observation
+behavior,generated payable call with value,Safe-capable,"Recipient, value, outcome, and order"
+layout,compiler-reported static layout,Safe-capable,"Slot, byte offset, type, and width"
+layout,mapping or dynamic-array root,Safe-capable,Root compatibility only
+layout,storage-gap consumption,Safe-capable,Compiler-reported reserved interval
+behavior,changed revert payload,Unknown,Arbitrary revert-data encoding is not modeled
+behavior,if or ternary effect,Unknown,Path-conditional effect is rejected
+behavior,loop or try/catch,Unknown,Control-flow semantics are not encoded
+behavior,inline assembly,Unknown,No behavioral assembly semantics
+layout,computed assembly storage target,Unknown,Literal-slot frontend cannot resolve target
+behavior,delegatecall or staticcall,Unknown,Call kind is not modeled
+behavior,transfer or send,Unknown,Value-transfer form is not modeled
+behavior,"selfdestruct, create, or create2",Unknown,Lifecycle effect is not modeled
+behavior,"delete, unchecked, or new",Unknown,Effect or arithmetic is not modeled
+behavior,unsupported hash or index expression,Unknown,Expression is outside arithmetic frontend
+mapping,"changed modifier, callee, inheritance, or dependency",Unknown,Unchanged entry point is not skipped
+solver,resource exhaustion,Timeout,Reported separately from Unknown
+frontend,"overload, fallback, receive, arbitrary modifier",Outside declared frontend,No general support claim

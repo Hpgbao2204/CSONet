@@ -6,14 +6,59 @@
     "warmup_runs": 3,
     "measured_runs": 30,
     "fuzz_trials": 128,
+    "fuzz_budgets": [
+      32,
+      128,
+      512,
+      2048
+    ],
+    "fuzz_seeds": 10,
     "ablation_runs": 30,
+    "bootstrap_replicates": 100000,
+    "safe_validation_pairs": 12,
+    "safe_validation_domain": {
+      "amount": [
+        1,
+        2
+      ],
+      "total": [
+        0,
+        2
+      ],
+      "limit": [
+        1,
+        2
+      ],
+      "balance": [
+        0,
+        2
+      ],
+      "active": [
+        false,
+        true
+      ],
+      "sender_owner": [
+        false,
+        true
+      ]
+    },
+    "scaling_obligations": [
+      1,
+      2,
+      5,
+      10,
+      20,
+      30,
+      40,
+      50
+    ],
     "output_root": "dataset/results"
   },
-  "config_hash": "8c20621d6aa3001e",
+  "config_hash": "807866e5075efb35",
   "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
   "records": {
-    "full": 5400,
-    "ablation": 37800,
+    "full": 6300,
+    "ablation": 44100,
     "oz": 120,
     "fuzz": 120
   },
