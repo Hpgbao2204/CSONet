@@ -235,10 +235,12 @@ def apply_storage(source: str, operator: str, use_gap: bool) -> tuple[str, str, 
         changed = source.replace("    uint256 public total;", "    bytes32 public injectedSalt;\n    uint256 public total;", 1)
         return changed, "", "total", "all following roots shift"
     if operator == "change_storage_type":
-        changed = source.replace("uint128 public limit;", "uint256 public limit;", 1)
-        changed = changed.replace("function setLimit(uint128 value)", "function setLimit(uint256 value)", 1)
-        changed = changed.replace("event LimitChanged(uint128 newLimit)", "event LimitChanged(uint256 newLimit)", 1)
-        return changed, "setLimit", "limit", "type and packing change"
+        changed = source.replace(
+            "uint64 internal inheritedEpoch;",
+            "bytes8 internal inheritedEpoch;",
+            1,
+        )
+        return changed, "", "inheritedEpoch", "semantic type changes at equal width"
     if operator == "change_packed_width":
         changed = source.replace("uint64 internal inheritedEpoch;", "uint128 internal inheritedEpoch;", 1)
         return changed, "", "inheritedEpoch,guardian", "inherited packed offset changes"
