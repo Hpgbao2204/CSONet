@@ -96,6 +96,19 @@ BEHAVIOR_OPERATORS = [
     "unsupported_hash_return",
 ]
 
+MIXED_RECIPES = [
+    (("storage", "reorder_state_variables"), ("behavior", "remove_require")),
+    (("storage", "change_packed_width"), ("behavior", "omit_event")),
+    (("safe", "rename_local_variable"), ("behavior", "comparison_operator_change")),
+    (("safe", "equivalent_expression_refactor"), ("behavior", "remove_require")),
+    (("behavior", "omit_state_update"), ("behavior", "omit_event")),
+    (("storage", "change_inheritance_order"), ("behavior", "arithmetic_operator_change")),
+    (("storage", "inline_assembly_legacy_slot_write"), ("behavior", "remove_access_modifier")),
+    (("storage", "move_mapping_root"), ("behavior", "return_value_change")),
+    (("safe", "commute_independent_writes"), ("behavior", "conditional_event")),
+    (("storage", "namespace_collision"), ("behavior", "change_call_recipient")),
+]
+
 
 def solidity_source(spec: ContractSpec) -> str:
     tail = (
@@ -382,6 +395,49 @@ def concrete_function(marker: str, spec: ContractSpec) -> str:
     return spec.action if marker == "ACTION" else marker
 
 
+def apply_mixed(
+    source: str,
+    spec: ContractSpec,
+    recipe: tuple[tuple[str, str], ...],
+) -> tuple[str, str, str, str, list[str]]:
+    changed = source
+    functions: list[str] = []
+    behavior_functions: list[str] = []
+    variables: list[str] = []
+    differences: list[str] = []
+    operators: list[str] = []
+    for kind, operator in recipe:
+        if kind == "safe":
+            changed, function, variable, difference = apply_safe(changed, operator)
+        elif kind == "storage":
+            changed, function, variable, difference = apply_storage(
+                changed, operator, spec.use_gap
+            )
+        elif kind == "behavior":
+            changed, function, variable, difference = apply_behavior(changed, operator)
+        else:
+            raise KeyError(kind)
+        operators.append(operator)
+        if function:
+            concrete = concrete_function(function, spec)
+            functions.append(concrete)
+            if kind == "behavior":
+                behavior_functions.append(concrete)
+        if variable:
+            variables.extend(item for item in variable.split(",") if item)
+        differences.append(difference)
+    changed_function = behavior_functions[-1] if behavior_functions else (
+        functions[-1] if functions else ""
+    )
+    return (
+        changed,
+        changed_function,
+        ",".join(dict.fromkeys(variables)),
+        "; ".join(differences),
+        operators,
+    )
+
+
 def write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8", newline="\n")
@@ -478,6 +534,8 @@ def main() -> None:
                         "expected_verdict": expected,
                         "safety_category": safety_category,
                         "mutation_operator": operator,
+                        "mutation_components": operator,
+                        "mutation_count": 1,
                         "changed_function": func,
                         "changed_variable": var,
                         "affected_slot": "",
@@ -491,12 +549,64 @@ def main() -> None:
                     "expected_verdict": expected,
                     "safety_category": safety_category,
                     "mutation_operator": operator,
+                    "mutation_components": operator,
+                    "mutation_count": 1,
                     "changed_function": func,
                     "changed_variable": var,
                     "affected_slot": None,
                     "expected_behavior_difference": diff,
                 }
                 write_text(ROOT / pair_dir / "ground_truth.json", json.dumps(truth, indent=2))
+
+        mixed_count = 2 if index < 10 else 1
+        for ordinal in range(1, mixed_count + 1):
+            recipe = MIXED_RECIPES[(index * 2 + ordinal - 1) % len(MIXED_RECIPES)]
+            v2, func, var, diff, operators = apply_mixed(v1, spec, recipe)
+            operator = "+".join(operators)
+            pair_id = f"{spec.name.lower()}_unsafe_mixed_{ordinal:02d}_{operator}"
+            pair_dir = Path("dataset/pairs") / "unsafe_mixed" / pair_id
+            v2_rel = pair_dir / "V2.sol"
+            write_text(ROOT / v2_rel, v2)
+            row = {
+                "pair_id": pair_id,
+                "contract_name": spec.name,
+                "contract_family": spec.family,
+                "proxy_type": spec.proxy_type,
+                "v1_path": original_rel.as_posix(),
+                "v2_path": v2_rel.as_posix(),
+                "expected_verdict": "Unsafe",
+                "safety_category": "mixed",
+                "mutation_operator": operator,
+                "mutation_components": ";".join(operators),
+                "mutation_count": len(operators),
+                "changed_function": func,
+                "changed_variable": var,
+                "affected_slot": "",
+                "expected_behavior_difference": diff,
+                "compiler_version": "0.8.30",
+                **metrics,
+            }
+            rows.append(row)
+            truth = {
+                key: row[key]
+                for key in (
+                    "pair_id",
+                    "expected_verdict",
+                    "safety_category",
+                    "mutation_operator",
+                    "mutation_components",
+                    "mutation_count",
+                    "changed_function",
+                    "changed_variable",
+                    "affected_slot",
+                    "expected_behavior_difference",
+                )
+            }
+            truth["affected_slot"] = None
+            write_text(
+                ROOT / pair_dir / "ground_truth.json",
+                json.dumps(truth, indent=2),
+            )
 
     metadata = DATASET / "metadata"
     metadata.mkdir(parents=True, exist_ok=True)
@@ -515,6 +625,13 @@ def main() -> None:
         ("behavior", BEHAVIOR_OPERATORS),
     ):
         op_rows.extend({"mutation_operator": op, "safety_category": category} for op in ops)
+    op_rows.extend(
+        {
+            "mutation_operator": "+".join(operator for _, operator in recipe),
+            "safety_category": "mixed",
+        }
+        for recipe in MIXED_RECIPES
+    )
     with (metadata / "mutation_operators.csv").open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=["mutation_operator", "safety_category"])
         writer.writeheader()
@@ -525,7 +642,7 @@ def main() -> None:
         "synthetic_pairs": len(rows),
         "counts": {
             key: sum(row["safety_category"] == key for row in rows)
-            for key in ("safe", "storage", "behavior")
+            for key in ("safe", "storage", "behavior", "mixed")
         },
     }
     write_text(metadata / "manifest.json", json.dumps(manifest, indent=2))

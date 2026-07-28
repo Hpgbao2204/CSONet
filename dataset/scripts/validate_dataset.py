@@ -19,6 +19,33 @@ def load_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
+def behavior_component_realized(operator: str, old: str, new: str) -> bool:
+    checks = {
+        "remove_require": new.count("require(") < old.count("require("),
+        "omit_event": new.count("emit ") < old.count("emit "),
+        "comparison_operator_change": "amount < uint256(limit)" in new,
+        "omit_state_update": "uint256 next = total + amount;" in new
+        and "total = next;" not in new,
+        "arithmetic_operator_change": "uint256 next = total - amount;" in new,
+        "remove_access_modifier": "external returns (uint256)" in new,
+        "return_value_change": "return total + 1;" in new,
+        "conditional_event": "if (amount % 2 == 0) { emit ValueAdded" in new,
+        "change_call_recipient": "payable(guardian).call" in new,
+    }
+    return checks.get(operator, old != new)
+
+
+def safe_component_realized(operator: str, new: str) -> bool:
+    checks = {
+        "rename_local_variable": "uint256 updated = total + amount;" in new,
+        "equivalent_expression_refactor": "total += amount;" in new,
+        "commute_independent_writes": (
+            new.find("[msg.sender] += amount;") < new.find("total = next;")
+        ),
+    }
+    return checks.get(operator, True)
+
+
 def main() -> None:
     dataset = ROOT / "dataset"
     pairs_path = dataset / "metadata" / "pairs.csv"
@@ -36,16 +63,17 @@ def main() -> None:
         checks.append({"check": check, "passed": passed, "detail": detail})
 
     record("original_count", len(contracts) == 20, f"observed={len(contracts)}")
-    record("pair_count", 160 <= len(rows) <= 240, f"observed={len(rows)}")
+    record("pair_count", len(rows) == 210, f"observed={len(rows)}")
     category_counts = Counter(row["safety_category"] for row in rows)
     record(
         "category_balance",
-        category_counts == {"safe": 60, "storage": 60, "behavior": 60},
+        category_counts
+        == {"safe": 60, "storage": 60, "behavior": 60, "mixed": 30},
         json.dumps(category_counts, sort_keys=True),
     )
     record(
         "compiler_success",
-        compile_result["error_count"] == 0 and compile_result["artifact_count"] == 200,
+        compile_result["error_count"] == 0 and compile_result["artifact_count"] == 230,
         json.dumps(compile_result, sort_keys=True),
     )
 
@@ -54,6 +82,7 @@ def main() -> None:
     missing_artifacts = []
     metadata_mismatches = []
     mutation_failures = []
+    mixed_component_failures = []
     affected_slots: dict[str, str] = {}
     for row in rows:
         v1 = (ROOT / row["v1_path"]).read_text(encoding="utf-8")
@@ -70,6 +99,8 @@ def main() -> None:
             "expected_verdict",
             "safety_category",
             "mutation_operator",
+            "mutation_components",
+            "mutation_count",
             "changed_function",
             "changed_variable",
             "expected_behavior_difference",
@@ -97,15 +128,18 @@ def main() -> None:
         }
         category = row["safety_category"]
         operator = row["mutation_operator"]
-        assembly_operator = operator in {
+        components = row["mutation_components"].split(";")
+        assembly_operator = any(component in {
             "inline_assembly_legacy_slot_write",
             "namespace_collision",
             "computed_assembly_slot_write",
-        }
+        } for component in components)
         if category == "storage":
             realized = old_cells != new_cells or (
                 assembly_operator and "sstore(" in v2 and "sstore(" not in v1
             )
+        elif category == "mixed":
+            realized = True
         elif category == "behavior":
             changed = row["changed_function"]
             realized = bool(changed) and f"function {changed}" in v1 and v1 != v2
@@ -113,6 +147,33 @@ def main() -> None:
             realized = v1 != v2
         if not realized:
             unrealized_ground_truth.append(row["pair_id"])
+        if category == "mixed":
+            component_results = []
+            for component in components:
+                if component in {
+                    "reorder_state_variables",
+                    "change_packed_width",
+                    "change_inheritance_order",
+                    "move_mapping_root",
+                }:
+                    component_results.append(old_cells != new_cells)
+                elif component in {
+                    "inline_assembly_legacy_slot_write",
+                    "namespace_collision",
+                }:
+                    component_results.append("sstore(" in v2 and "sstore(" not in v1)
+                elif component in {
+                    "rename_local_variable",
+                    "equivalent_expression_refactor",
+                    "commute_independent_writes",
+                }:
+                    component_results.append(safe_component_realized(component, v2))
+                else:
+                    component_results.append(
+                        behavior_component_realized(component, v1, v2)
+                    )
+            if len(components) < 2 or not all(component_results):
+                mixed_component_failures.append(row["pair_id"])
 
         changed_names = set(old_cells) | set(new_cells)
         changed_locations = {
@@ -134,6 +195,11 @@ def main() -> None:
         "ground_truth_realized_independently",
         not unrealized_ground_truth,
         json.dumps(unrealized_ground_truth),
+    )
+    record(
+        "mixed_components_realized",
+        not mixed_component_failures,
+        json.dumps(mixed_component_failures),
     )
 
     # Fill compiler-resolved affected slots without changing any class label.
