@@ -20,7 +20,7 @@ from scipy.interpolate import PchipInterpolator
 ROOT = Path(__file__).resolve().parents[2]
 RAW = ROOT / "dataset" / "results" / "raw"
 SUMMARY = ROOT / "dataset" / "results" / "summary"
-FIGURES = ROOT / "dataset" / "results" / "figures"
+FIGURES = ROOT / "dataset" / "results" / "figure-new"
 
 STORAGE_GROUP = {
     "reorder_state_variables": "Declarations",
@@ -415,7 +415,12 @@ def panel_2a_behavior_outcome_profile() -> None:
     ax.set_xticks(x, ["Detected", "Missed", "Unknown"])
     ax.set_ylim(0.01, 1.02)
     axes_style(ax, "Analyzer outcome", "Jeffreys outcome estimate")
-    ax.legend(loc="center right", bbox_to_anchor=(0.99, 0.43), frameon=True)
+    ax.legend(
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.01),
+        ncol=4,
+        frameon=True,
+    )
 
     inset = ax.inset_axes([0.57, 0.55, 0.38, 0.34])
     aggregate = [
@@ -564,6 +569,8 @@ def draw_ablation_pair(
     output_name: str,
     *,
     runtime: bool = False,
+    third_key: str | None = None,
+    third_label: str = "",
 ) -> None:
     data = pd.read_csv(SUMMARY / "ablation_summary.csv").set_index("variant")
     variants = [
@@ -583,6 +590,11 @@ def draw_ablation_pair(
         estimates = [classification_estimates(data.loc[key]) for key, _ in variants]
         first = np.asarray([row[first_key] for row in estimates])
         second = np.asarray([row[second_key] for row in estimates])
+        third = (
+            np.asarray([row[third_key] for row in estimates])
+            if third_key is not None
+            else None
+        )
     colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
     fig, ax = plt.subplots(figsize=(7.2, 7.2))
     smooth_profile(
@@ -591,6 +603,16 @@ def draw_ablation_pair(
     smooth_profile(
         ax, x, second, color=colors[1], marker="s", label=second_label, linewidth=2.2
     )
+    if not runtime and third is not None:
+        smooth_profile(
+            ax,
+            x,
+            third,
+            color=colors[2],
+            marker="^",
+            label=third_label,
+            linewidth=2.2,
+        )
     ax.set_xticks(x, [label for _key, label in variants])
     if not runtime:
         ax.set_ylim(0.30, 1.01)
@@ -607,6 +629,8 @@ def diagnostics_3a_quality_profiles() -> None:
         "Recall",
         "Classification estimate",
         "figure_diagnostics_3a_quality.pdf",
+        third_key="f1",
+        third_label=r"$F_1$",
     )
 
 
@@ -627,7 +651,7 @@ def diagnostics_3c_runtime_profiles() -> None:
         "p95_runtime_ms",
         "Median",
         "p95",
-        "End-to-end latency (ms)",
+        "Analyzer latency (ms)",
         "figure_diagnostics_3c_runtime.pdf",
         runtime=True,
     )
@@ -731,7 +755,7 @@ def extra_runtime_distribution() -> None:
     fig, ax = plt.subplots(figsize=(7.6, 5.6))
     colored_boxplot(ax, values, ["Safe", "Storage", "Behavior"], show_points=True, seed=53)
     ax.set_yscale("log")
-    axes_style(ax, "Upgrade class", "End-to-end latency (ms, log scale)")
+    axes_style(ax, "Upgrade class", "Analyzer latency (ms, log scale)")
     save(fig, "figure_runtime_3c_distribution.pdf")
 
 
@@ -877,9 +901,9 @@ def main() -> None:
             "2d": "shape-preserving posterior replay-evidence profiles",
             "scaling-a": "obligation scaling with interquartile band and inset",
             "scaling-b": "symbolic-path scaling with binned medians and OLS trend",
-            "3a": "shape-preserving precision and recall ablation profiles",
+            "3a": "shape-preserving precision, recall, and F1 ablation profiles",
             "3b": "shape-preserving accuracy and coverage ablation profiles",
-            "3c": "shape-preserving median and p95 runtime ablation profiles",
+            "3c": "shape-preserving median and p95 analyzer-latency profiles",
         },
         "note": "No experimental value is cosmetically altered.",
         "figures": sorted(path.name for path in FIGURES.glob("*.pdf")),
