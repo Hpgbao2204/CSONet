@@ -67,30 +67,14 @@ one through ten relational obligations. This is a controlled workload study,
 not a claim that one V2 contains ten independent mutations.
 
 `results/raw/fuzz_budget_sweep.csv` contains 480 observations for deterministic
-trial budgets 16, 32, 64, and 128. It is retained as a supplementary
-sensitivity result even though the final four-figure paper layout does not
-use a budget panel.
-
-The figure generator emits thirteen independent square vector PDFs. The first
-experimental figure assembles storage panels 1a--1d and behavior panels 2a--2d
-in a two-by-four layout. The second combines the obligation and symbolic-path
-scalability panels. The third assembles three matched ablation panels in one
-row. All panels use 21-point Matplotlib-default typography.
-
-Panels 1a, 1b, 2d, and 3a--3c connect Jeffreys posterior estimates or measured
-timing summaries using shape-preserving cubic profiles. The
-interpolation is only a visual guide and cannot overshoot the marked range.
-The three diagnostic panels use an identical square canvas, configuration
-order, one-column upper-right legend, and paired-curve grammar. Timing densities
-use Gaussian KDE with Scott's bandwidth. The generator never changes a
-measured value or categorical outcome.
+trial budgets 16, 32, 64, and 128.
 
 ## Statistical protocol
 
 The runner performs three warm-up passes and thirty measured passes. It reports
 median, IQR, and p95. Classification summaries retain TP, TN, FP, FN,
 precision, recall, F1, FPR, FNR, unknown rate, timeout rate, and accuracy.
-Plots read only checked-in CSV files.
+Aggregate statistics are derived only from the checked-in raw CSV files.
 
 ## Compiler warnings
 
