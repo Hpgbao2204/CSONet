@@ -11,11 +11,10 @@ import warnings
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from matplotlib.path import Path as MplPath
-from matplotlib.patches import PathPatch
 import numpy as np
 import pandas as pd
 from scipy.stats import gaussian_kde
+from scipy.interpolate import PchipInterpolator
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -104,6 +103,34 @@ def axes_style(ax: plt.Axes, xlabel: str, ylabel: str) -> None:
     ax.set_axisbelow(True)
 
 
+def smooth_profile(
+    ax: plt.Axes,
+    x: np.ndarray,
+    y: np.ndarray,
+    *,
+    color: str,
+    marker: str,
+    label: str,
+    linewidth: float = 2.0,
+) -> None:
+    """Connect exact observations with shape-preserving cubic interpolation."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    dense_x = np.linspace(x.min(), x.max(), 320)
+    dense_y = PchipInterpolator(x, y)(dense_x)
+    ax.plot(dense_x, dense_y, color=color, linewidth=linewidth, label=label)
+    ax.scatter(
+        x,
+        y,
+        marker=marker,
+        s=48,
+        color=color,
+        edgecolor="black",
+        linewidth=0.4,
+        zorder=4,
+    )
+
+
 def jeffreys(successes: pd.Series, totals: pd.Series) -> np.ndarray:
     return np.asarray((successes + 0.5) / (totals + 1), dtype=float)
 
@@ -134,48 +161,40 @@ def storage_records(include_safe: bool = False) -> pd.DataFrame:
 def panel_1a_storage_profile() -> None:
     data = storage_records()
     data["detected"] = data["verdict"].eq("Unsafe").astype(int)
-    operator_rates = (
-        data.groupby(["storage_class", "method", "mutation_operator"])["detected"]
-        .agg(successes="sum", total="count")
-        .reset_index()
-    )
-    operator_rates["estimate"] = jeffreys(
-        operator_rates["successes"], operator_rates["total"]
+    operator_order = list(STORAGE_GROUP)
+    detected = (
+        data.groupby(["method", "mutation_operator"])["detected"]
+        .sum()
+        .unstack(fill_value=0)
+        .reindex(index=ALL_METHOD_LABELS, columns=operator_order, fill_value=0)
     )
     fig, ax = plt.subplots(figsize=(6.4, 6.4))
-    x = np.arange(len(STORAGE_ORDER))
+    x = np.arange(1, len(operator_order) + 1)
     colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
-    offsets = np.linspace(-0.24, 0.24, len(ALL_METHOD_LABELS))
-    for idx, label in enumerate(ALL_METHOD_LABELS):
-        part = operator_rates.loc[operator_rates["method"].eq(label)]
-        summary = (
-            part.groupby("storage_class")["estimate"]
-            .agg(mean="mean", minimum="min", maximum="max")
-            .reindex(STORAGE_ORDER)
-        )
-        mean = summary["mean"].to_numpy()
-        ax.errorbar(
-            x + offsets[idx],
-            mean,
-            yerr=np.vstack(
-                [
-                    np.maximum(mean - summary["minimum"].to_numpy(), 0.0),
-                    np.maximum(summary["maximum"].to_numpy() - mean, 0.0),
-                ]
-            ),
-            fmt=["o", "s", "^", "D", "v"][idx],
-            color=colors[idx],
-            markersize=7.2,
-            markeredgecolor="black",
-            markeredgewidth=0.45,
-            capsize=4.0,
-            elinewidth=1.45,
+    profiles = [
+        ("CSO", "CSO", "o", colors[0]),
+        ("ID", "ID", "s", colors[1]),
+        (r"$-\tau$", r"$-\tau$", "D", colors[3]),
+        ("OZ", "S+T/OZ", "v", colors[4]),
+    ]
+    for source, label, marker, color in profiles:
+        smooth_profile(
+            ax,
+            x,
+            detected.loc[source].cumsum().to_numpy(dtype=float),
+            color=color,
+            marker=marker,
             label=label,
         )
-    ax.set_xticks(x, ["Declarations", "Types", "Roots", "Assembly"], rotation=16)
-    ax.set_ylim(0.02, 0.99)
-    axes_style(ax, "Mutation class", "Operator-level detection estimate")
-    ax.legend(ncol=3, loc="lower left", frameon=True)
+    boundaries = np.cumsum(
+        [sum(group == storage_class for group in STORAGE_GROUP.values())
+         for storage_class in STORAGE_ORDER]
+    )
+    for boundary in boundaries[:-1]:
+        ax.axvline(boundary + 0.5, color="0.78", linestyle=":", linewidth=0.9)
+    ax.set_xticks([1, 3, 5, 7, 9, 11])
+    axes_style(ax, "Storage-operator rank", "Cumulative detected cases")
+    ax.legend(ncol=2, loc="upper left", frameon=True)
     save(fig, "figure_storage_1a_profile.pdf")
 
 
@@ -480,8 +499,8 @@ def panel_2c_replay_quantiles() -> None:
     save(fig, "figure_behavior_2c_replay.pdf")
 
 
-def panel_2d_evidence_graph() -> None:
-    """Draw a readable weighted graph from semantic classes to EVM evidence."""
+def panel_2d_evidence_profiles() -> None:
+    """Plot smooth semantic profiles over independently replayed evidence."""
     replay = pd.read_csv(RAW / "evm_replay.csv")
     dimensions = [("status_or_return", "Return"), ("transaction_status", "Tx"),
                   ("events", "Event"), ("storage", "Storage"),
@@ -506,72 +525,22 @@ def panel_2d_evidence_graph() -> None:
 
     fig, ax = plt.subplots(figsize=(6.4, 6.4))
     colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
-    left_y = np.linspace(0.84, 0.16, len(BEHAVIOR_ORDER))
-    right_y = np.linspace(0.88, 0.12, len(dimensions))
-    for class_idx, semantic_class in enumerate(BEHAVIOR_ORDER):
-        ax.text(
-            0.03,
-            left_y[class_idx],
-            BEHAVIOR_DISPLAY[class_idx],
-            ha="left",
-            va="center",
-            fontsize=16,
-            color=colors[class_idx],
-            fontweight="bold",
+    x = np.arange(len(dimensions))
+    for idx, semantic_class in enumerate(BEHAVIOR_ORDER):
+        values = counts.loc[
+            semantic_class, [key for key, _label in dimensions]
+        ].to_numpy(dtype=float)
+        smooth_profile(
+            ax,
+            x,
+            values,
+            color=colors[idx],
+            marker=["o", "s", "^", "D"][idx],
+            label=BEHAVIOR_DISPLAY[idx],
         )
-        ax.plot(
-            [0.20, 0.235],
-            [left_y[class_idx], left_y[class_idx]],
-            color=colors[class_idx],
-            linewidth=5.0,
-            solid_capstyle="round",
-        )
-        active_connections = [
-            (dimension_idx, int(counts.loc[semantic_class, key]))
-            for dimension_idx, (key, _label) in enumerate(dimensions)
-            if int(counts.loc[semantic_class, key]) > 0
-        ]
-        offsets = np.linspace(-0.026, 0.026, len(active_connections))
-        for connection_idx, (dimension_idx, count) in enumerate(active_connections):
-            y0 = left_y[class_idx] + offsets[connection_idx]
-            y1 = right_y[dimension_idx]
-            vertices = [(0.235, y0), (0.43, y0), (0.61, y1), (0.79, y1)]
-            path = MplPath(
-                vertices,
-                [MplPath.MOVETO, MplPath.CURVE4, MplPath.CURVE4, MplPath.CURVE4],
-            )
-            ax.add_patch(
-                PathPatch(
-                    path,
-                    facecolor="none",
-                    edgecolor=colors[class_idx],
-                    linewidth=0.75 + 0.42 * count,
-                    alpha=0.48,
-                    capstyle="round",
-                )
-            )
-    for dimension_idx, (key, label) in enumerate(dimensions):
-        total = int(counts[key].sum())
-        ax.plot(
-            [0.79, 0.825],
-            [right_y[dimension_idx], right_y[dimension_idx]],
-            color="0.25",
-            linewidth=5.0,
-            solid_capstyle="round",
-        )
-        ax.text(
-            0.84,
-            right_y[dimension_idx],
-            f"{label} ({total})",
-            ha="left",
-            va="center",
-            fontsize=15,
-        )
-    ax.text(0.04, 0.96, "Semantic class", fontsize=16, fontweight="bold")
-    ax.text(0.79, 0.96, "Replay evidence", fontsize=16, fontweight="bold")
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0.04, 1.0)
-    ax.axis("off")
+    ax.set_xticks(x, [label for _key, label in dimensions])
+    axes_style(ax, "Observable channel", "Validated counterexamples")
+    ax.legend(ncol=2, loc="upper right", frameon=True)
     save(fig, "figure_behavior_2d_observables.pdf")
 
 
@@ -739,87 +708,46 @@ def diagnostics_3c_replay_intervals() -> None:
     save(fig, "figure_diagnostics_3c_replay_intervals.pdf")
 
 
-def draw_verdict_flow(
-    ax: plt.Axes,
-    full: pd.DataFrame,
-    ablated: pd.DataFrame,
-    title: str,
-) -> None:
-    verdicts = ["Unsafe", "Safe", "Unknown"]
-    verdict_labels = {"Unsafe": "U", "Safe": "S", "Unknown": "?"}
-    colors = {"Unsafe": "#2ca02c", "Safe": "#d62728", "Unknown": "#ffbf00"}
-    joined = full[["pair_id", "verdict"]].merge(
-        ablated[["pair_id", "verdict"]], on="pair_id", suffixes=("_full", "_ablated")
-    )
-    y = {"Unsafe": 0.80, "Safe": 0.50, "Unknown": 0.20}
-    for verdict in verdicts:
-        ax.text(
-            0.02, y[verdict], verdict_labels[verdict],
-            ha="left", va="center", fontsize=11
-        )
-        ax.text(
-            0.98, y[verdict], verdict_labels[verdict],
-            ha="right", va="center", fontsize=11
-        )
-    transitions = (
-        joined.groupby(["verdict_full", "verdict_ablated"]).size().rename("count")
-    )
-    source_offsets = {verdict: 0.0 for verdict in verdicts}
-    target_offsets = {verdict: 0.0 for verdict in verdicts}
-    for (source, target), count in transitions.items():
-        if source not in y or target not in y:
-            continue
-        y0 = y[source] + source_offsets[source]
-        y1 = y[target] + target_offsets[target]
-        source_offsets[source] += 0.010
-        target_offsets[target] += 0.010
-        path = MplPath(
-            [(0.12, y0), (0.38, y0), (0.62, y1), (0.88, y1)],
-            [MplPath.MOVETO, MplPath.CURVE4, MplPath.CURVE4, MplPath.CURVE4],
-        )
-        ax.add_patch(
-            PathPatch(
-                path,
-                facecolor="none",
-                edgecolor=colors[source],
-                linewidth=0.55 + 0.24 * int(count),
-                alpha=0.42,
-                capstyle="round",
-            )
-        )
-    ax.text(0.12, 0.96, "CSO", ha="center", va="top", fontsize=11, fontweight="bold")
-    ax.text(0.88, 0.96, title, ha="center", va="top", fontsize=11, fontweight="bold")
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0.08, 1.0)
-    ax.axis("off")
-
-
-def diagnostics_3d_ablation_flows() -> None:
-    data = pd.read_csv(RAW / "ablation_results.csv")
-    data = data.loc[data["run_id"].eq(1)]
-    full = data.loc[data["variant"].eq("Full")]
+def diagnostics_3d_ablation_profiles() -> None:
+    data = pd.read_csv(SUMMARY / "ablation_summary.csv").set_index("variant")
     variants = [
-        ("NoBehavior", r"$-\mathrm{Beh.}$"),
+        ("Full", "CSO"),
         ("NameOnly", "ID"),
+        ("NoBehavior", r"$-\mathrm{Beh.}$"),
         ("NoStorageType", r"$-\tau$"),
-        ("NoSkipUnchanged", "All funcs."),
+        ("NoSkipUnchanged", "All"),
     ]
-    fig, axes = plt.subplots(2, 2, figsize=(6.4, 6.4))
-    for ax, (variant, label) in zip(axes.flat, variants):
-        draw_verdict_flow(
-            ax,
-            full,
-            data.loc[data["variant"].eq(variant)],
-            label,
+    criteria = ["accuracy", "precision", "recall", "f1", "coverage"]
+    x = np.arange(len(criteria))
+    colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
+    fig, ax = plt.subplots(figsize=(6.4, 6.4))
+    for idx, (variant, label) in enumerate(variants):
+        row = data.loc[variant]
+        decided = 180 * (1.0 - row["unknown_rate"] - row["timeout_rate"])
+        coverage = (decided + 0.5) / 181.0
+        values = np.asarray(
+            [
+                row["accuracy"],
+                row["precision"],
+                row["recall"],
+                row["f1"],
+                coverage,
+            ],
+            dtype=float,
         )
-    fig.text(
-        0.5,
-        0.015,
-        "Verdict flow under component removal (U/S/? labels)",
-        ha="center",
-        fontsize=15,
-    )
-    save(fig, "figure_diagnostics_3d_ablation_flows.pdf")
+        smooth_profile(
+            ax,
+            x,
+            values,
+            color=colors[idx],
+            marker=["o", "s", "^", "D", "v"][idx],
+            label=label,
+        )
+    ax.set_xticks(x, ["Accuracy", "Precision", "Recall", r"$F_1$", "Coverage"])
+    ax.set_ylim(0.32, 1.02)
+    axes_style(ax, "Evaluation criterion", "Classification estimate")
+    ax.legend(ncol=2, loc="lower right", frameon=True)
+    save(fig, "figure_diagnostics_3d_ablation_profiles.pdf")
 
 
 def extra_ablation_bars() -> None:
@@ -1038,11 +966,11 @@ def main() -> None:
     panel_2a_behavior_outcome_profile()
     panel_2b_behavior_latency_kde()
     panel_2c_replay_quantiles()
-    panel_2d_evidence_graph()
+    panel_2d_evidence_profiles()
     diagnostics_3a_stage_intervals()
     diagnostics_3b_verification_intervals()
     diagnostics_3c_replay_intervals()
-    diagnostics_3d_ablation_flows()
+    diagnostics_3d_ablation_profiles()
     scalability_obligations()
     scalability_paths()
     manifest = {
@@ -1050,20 +978,20 @@ def main() -> None:
         "font_size_pt": 18,
         "style": "Matplotlib default typography and color cycle",
         "panel_types": {
-            "1a": "operator-level mean and range plot",
+            "1a": "shape-preserving cumulative detection profiles",
             "1b": "connected multi-metric method profile",
             "1c": "log-time Gaussian kernel density",
             "1d": "connected evidence profile",
             "2a": "connected detection profile with aggregate inset",
             "2b": "Gaussian kernel density",
             "2c": "connected replay quantile profile",
-            "2d": "weighted semantic-to-evidence graph",
+            "2d": "shape-preserving replay-evidence profiles",
             "scaling-a": "obligation scaling with interquartile band and inset",
             "scaling-b": "symbolic-path scaling with binned medians and OLS trend",
             "3a": "pipeline-stage mean, median, and p05--p95 intervals",
             "3b": "verification-time mean, median, and p05--p95 intervals",
             "3c": "replay-time mean, median, and p05--p95 intervals",
-            "3d": "alluvial verdict transitions under ablation",
+            "3d": "shape-preserving multi-metric ablation profiles",
         },
         "note": "No experimental value is cosmetically altered.",
         "figures": sorted(path.name for path in FIGURES.glob("*.pdf")),
