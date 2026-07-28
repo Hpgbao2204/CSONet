@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import csv
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -30,6 +31,11 @@ def main() -> None:
 
     cache = ROOT / ".cache"
     cache.mkdir(exist_ok=True)
+    artifact_root = (DATASET / "artifacts").resolve()
+    if artifact_root.parent != DATASET.resolve():
+        raise RuntimeError(f"refusing to clean unexpected path: {artifact_root}")
+    if artifact_root.exists():
+        shutil.rmtree(artifact_root)
     result_path = DATASET / "results" / "raw" / "compile_result.json"
     result_path.parent.mkdir(parents=True, exist_ok=True)
     manifest = {
@@ -50,4 +56,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

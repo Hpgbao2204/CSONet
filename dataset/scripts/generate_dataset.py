@@ -7,6 +7,7 @@ import csv
 import hashlib
 import json
 import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -343,6 +344,12 @@ def choose_ops(pool: list[str], index: int, count: int = 3) -> list[str]:
 
 
 def main() -> None:
+    for generated in (DATASET / "originals", DATASET / "pairs"):
+        resolved = generated.resolve()
+        if resolved.parent != DATASET.resolve():
+            raise RuntimeError(f"refusing to clean unexpected path: {resolved}")
+        if resolved.exists():
+            shutil.rmtree(resolved)
     rows: list[dict[str, object]] = []
     contract_rows: list[dict[str, object]] = []
     for index, spec in enumerate(SPECS):
