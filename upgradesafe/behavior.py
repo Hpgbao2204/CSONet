@@ -48,6 +48,7 @@ class FunctionSource:
 @dataclass
 class FunctionSummary:
     guards: tuple[str, ...]
+    revert_payloads: tuple[str, ...]
     writes: tuple[tuple[str, str], ...]
     return_expr: str
     events: tuple[str, ...]
@@ -141,6 +142,24 @@ def split_require_conditions(body: str) -> list[str]:
     return results
 
 
+def split_require_payloads(body: str) -> list[str]:
+    """Return canonical require payloads in guard order.
+
+    The current SMT frontend does not model arbitrary ABI-encoded revert data.
+    Recording it prevents a payload change from disappearing during summary
+    canonicalization; pair checking handles a difference conservatively.
+    """
+
+    payloads: list[str] = []
+    pattern = re.compile(
+        r"\brequire\s*\((?:[^()]|\([^()]*\))*?,\s*(.*?)\)\s*;",
+        re.DOTALL,
+    )
+    for match in pattern.finditer(body):
+        payloads.append(re.sub(r"\s+", "", match.group(1)))
+    return payloads
+
+
 def canonical_condition(condition: str) -> str:
     compact = re.sub(r"\s+", "", condition)
     compact = compact.replace("uint256(limit)", "limit")
@@ -163,6 +182,7 @@ def resolve_expression(expression: str, locals_: dict[str, str]) -> str:
 def summarize(function: FunctionSource) -> FunctionSummary:
     body = function.body
     guards = split_require_conditions(body)
+    revert_payloads = split_require_payloads(body)
     if "onlyOwner" in function.signature:
         guards.insert(0, "sender==owner")
     locals_: dict[str, str] = {}
@@ -242,6 +262,18 @@ def summarize(function: FunctionSource) -> FunctionSummary:
         "false",
     }
     unsupported = [condition for condition in guards if condition not in supported_conditions]
+    unsupported_syntax: list[str] = []
+    syntax_checks = (
+        (r"\bif\s*\(", "conditional effect"),
+        (r"\b(?:for|while|do)\b", "loop"),
+        (r"\btry\b|\bcatch\b", "exception control flow"),
+        (r"\bassembly\b", "inline assembly"),
+        (r"\bdelegatecall\b|\bstaticcall\b", "unmodeled call kind"),
+        (r"\bselfdestruct\b|\bcreate2?\b", "lifecycle effect"),
+    )
+    for pattern, reason in syntax_checks:
+        if re.search(pattern, body):
+            unsupported_syntax.append(reason)
     supported_expression = re.compile(
         r"^(?:void|[A-Za-z_]\w*|\d+|[A-Za-z_]\w*[+-](?:[A-Za-z_]\w*|\d+))$"
     )
@@ -257,13 +289,16 @@ def summarize(function: FunctionSource) -> FunctionSummary:
     ]
     return FunctionSummary(
         guards=tuple(guards),
+        revert_payloads=tuple(revert_payloads),
         writes=tuple(sorted(writes.items())),
         return_expr=return_expr,
         events=canonical_events,
         calls=calls,
         effect_order=tuple(effect_order),
-        supported=not unsupported and not unsupported_expressions,
-        unsupported_reason=", ".join(unsupported + unsupported_expressions),
+        supported=not unsupported and not unsupported_expressions and not unsupported_syntax,
+        unsupported_reason=", ".join(
+            unsupported + unsupported_expressions + unsupported_syntax
+        ),
     )
 
 
@@ -360,7 +395,19 @@ def check_equivalence(
     if not one.supported or not two.supported:
         return EquivalenceResult(
             "Unknown",
-            f"unsupported guard: {one.unsupported_reason or two.unsupported_reason}",
+            f"unsupported semantics: {one.unsupported_reason or two.unsupported_reason}",
+            (time.perf_counter_ns() - started) / 1e6,
+            0,
+            0,
+            0,
+            None,
+            one.digest(),
+            two.digest(),
+        )
+    if one.revert_payloads != two.revert_payloads:
+        return EquivalenceResult(
+            "Unknown",
+            "revert payload differs and arbitrary revert-data encoding is outside the model",
             (time.perf_counter_ns() - started) / 1e6,
             0,
             0,

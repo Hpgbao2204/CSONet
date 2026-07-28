@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import re
 import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -34,6 +36,29 @@ def _now() -> int:
     return time.perf_counter_ns()
 
 
+def _normalized(text: str) -> str:
+    return re.sub(r"\s+", "", text)
+
+
+def _dependency_surface(source: str) -> str:
+    """Fingerprint everything an unchanged external method may depend on.
+
+    Public/external bodies are masked so that changing one entry point does not
+    force every other entry point to be rechecked. Their signatures remain,
+    while internal/private bodies, modifiers, inheritance clauses, state
+    declarations, and other contract-level dependencies remain intact.
+    """
+
+    functions = extract_functions(source)
+    surface = source
+    for function in sorted(functions.values(), key=lambda item: len(item.body), reverse=True):
+        visibility = function.signature
+        if re.search(r"\b(?:public|external)\b", visibility):
+            needle = "{" + function.body + "}"
+            surface = surface.replace(needle, "{<entry-point-body>}", 1)
+    return hashlib.sha256(_normalized(surface).encode()).hexdigest()
+
+
 def analyze_pair(
     root: Path,
     row: dict[str, str],
@@ -62,13 +87,17 @@ def analyze_pair(
     v1_functions = extract_functions(v1_source)
     v2_functions = extract_functions(v2_source)
     common = sorted(set(v1_functions) & set(v2_functions))
+    dependencies_unchanged = _dependency_surface(v1_source) == _dependency_surface(v2_source)
     syntactically_changed = [
         name
         for name in common
         if "".join(v1_functions[name].body.split()) != "".join(v2_functions[name].body.split())
         or "".join(v1_functions[name].signature.split()) != "".join(v2_functions[name].signature.split())
     ]
-    mapped = syntactically_changed if options.skip_unchanged else common
+    if options.skip_unchanged and dependencies_unchanged:
+        mapped = syntactically_changed
+    else:
+        mapped = common
     mapping_ms = (_now() - started) / 1e6
 
     behavior_ms = 0.0
@@ -128,7 +157,7 @@ def analyze_pair(
         verdict = behavior_verdict
         reason = (
             next((item["reason"] for item in behavior_results if item["verdict"] == verdict), "")
-            or "no changed preserved function"
+            or "no changed preserved function and all dependency surfaces are unchanged"
         )
 
     peak_memory_mb = psutil.Process().memory_info().rss / (1024 * 1024)
