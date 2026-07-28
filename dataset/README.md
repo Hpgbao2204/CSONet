@@ -71,19 +71,19 @@ trial budgets 16, 32, 64, and 128. It is retained as a supplementary
 sensitivity result even though the final four-figure paper layout does not
 use a budget panel.
 
-The figure generator emits fourteen independent square vector PDFs. The first
+The figure generator emits thirteen independent square vector PDFs. The first
 experimental figure assembles storage panels 1a--1d and behavior panels 2a--2d
 in a two-by-four layout. The second combines the obligation and symbolic-path
-scalability panels. The third assembles diagnostic panels 3a--3d in a two-by-two
-layout. All panels use 18-point Matplotlib-default typography.
+scalability panels. The third assembles three matched ablation panels in one
+row. All panels use 21-point Matplotlib-default typography.
 
-Panels 1a and 2d connect Jeffreys posterior estimates, while panel 3d connects
-exact aggregate metrics, using shape-preserving cubic profiles. The
+Panels 1a, 1b, 2d, and 3a--3c connect Jeffreys posterior estimates or measured
+timing summaries using shape-preserving cubic profiles. The
 interpolation is only a visual guide and cannot overshoot the marked range.
-Panels 3a--3c report connected distribution summaries with median, mean, and
-5th--95th percentile intervals. Timing densities use Gaussian KDE with Scott's
-bandwidth. The generator never changes a measured value or categorical
-outcome.
+The three diagnostic panels use an identical square canvas, configuration
+order, one-column upper-right legend, and paired-curve grammar. Timing densities
+use Gaussian KDE with Scott's bandwidth. The generator never changes a
+measured value or categorical outcome.
 
 ## Statistical protocol
 

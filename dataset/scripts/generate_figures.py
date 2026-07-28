@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate data-dense, non-line-chart vector panels from saved CSVs."""
+"""Generate data-dense vector panels from saved CSVs."""
 
 from __future__ import annotations
 
@@ -69,12 +69,12 @@ def configure() -> None:
     mpl.rcdefaults()
     mpl.rcParams.update(
         {
-            "font.size": 18,
-            "axes.labelsize": 18,
-            "axes.titlesize": 18,
-            "legend.fontsize": 10,
-            "xtick.labelsize": 15,
-            "ytick.labelsize": 15,
+            "font.size": 21,
+            "axes.labelsize": 21,
+            "axes.titlesize": 21,
+            "legend.fontsize": 13,
+            "xtick.labelsize": 18,
+            "ytick.labelsize": 18,
             "pdf.fonttype": 42,
             "ps.fonttype": 42,
         }
@@ -196,43 +196,51 @@ def panel_1a_storage_profile() -> None:
     save(fig, "figure_storage_1a_profile.pdf")
 
 
-def panel_1b_storage_metric_profile() -> None:
-    data = storage_records(include_safe=True)
-    rows = []
-    for method in ALL_METHOD_LABELS:
-        part = data.loc[data["method"].eq(method)]
-        expected_unsafe = part["safety_category"].eq("storage")
-        decided = ~part["verdict"].eq("Unknown")
-        tp = int((expected_unsafe & part["verdict"].eq("Unsafe")).sum())
-        fn = int((expected_unsafe & part["verdict"].eq("Safe")).sum())
-        fp = int((~expected_unsafe & part["verdict"].eq("Unsafe")).sum())
-        tn = int((~expected_unsafe & part["verdict"].eq("Safe")).sum())
-        precision = (tp + 0.5) / (tp + fp + 1)
-        recall = (tp + 0.5) / (tp + fn + 1)
-        specificity = (tn + 0.5) / (tn + fp + 1)
-        f1 = 2 * precision * recall / (precision + recall)
-        coverage = (int(decided.sum()) + 0.5) / (len(part) + 1)
-        rows.append([precision, recall, specificity, f1, coverage])
-    metrics = np.asarray(rows)
-    fig, ax = plt.subplots(figsize=(6.4, 6.4))
-    x = np.arange(metrics.shape[1])
+def classification_estimates(row: pd.Series) -> dict[str, float]:
+    """Return boundary-safe Jeffreys estimates from one ablation summary row."""
+    tp, tn, fp, fn = (float(row[key]) for key in ("tp", "tn", "fp", "fn"))
+    precision = (tp + 0.5) / (tp + fp + 1.0)
+    recall = (tp + 0.5) / (tp + fn + 1.0)
+    accuracy = (tp + tn + 0.5) / (tp + tn + fp + fn + 1.0)
+    f1 = 2.0 * precision * recall / (precision + recall)
+    decided = 180.0 * (1.0 - row["unknown_rate"] - row["timeout_rate"])
+    coverage = (decided + 0.5) / 181.0
+    return {
+        "accuracy": accuracy,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "coverage": coverage,
+    }
+
+
+def panel_1b_ablation_profile() -> None:
+    data = pd.read_csv(SUMMARY / "ablation_summary.csv").set_index("variant")
+    variants = [
+        ("Full", "UG"),
+        ("NameOnly", "ID"),
+        ("NoBehavior", r"$-\mathrm{Beh.}$"),
+        ("NoStorageType", r"$-\tau$"),
+        ("NoSkipUnchanged", "All"),
+    ]
+    criteria = ["accuracy", "precision", "recall", "f1", "coverage"]
+    x = np.arange(len(criteria))
     colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
-    for idx, method in enumerate(ALL_METHOD_LABELS):
-        ax.plot(
+    fig, ax = plt.subplots(figsize=(6.4, 6.4))
+    for idx, (variant, label) in enumerate(variants):
+        estimates = classification_estimates(data.loc[variant])
+        smooth_profile(
+            ax,
             x,
-            metrics[idx],
+            np.asarray([estimates[key] for key in criteria], dtype=float),
             color=colors[idx],
             marker=["o", "s", "^", "D", "v"][idx],
-            linewidth=1.75,
-            markersize=7.0,
-            markeredgecolor="black",
-            markeredgewidth=0.45,
-            label=method,
+            label=label,
         )
-    ax.set_xticks(x, ["Precision", "Recall", "Specificity", r"$F_1$", "Coverage"], rotation=16)
-    ax.set_ylim(0.02, 1.03)
-    axes_style(ax, "Evaluation criterion", "Jeffreys estimate")
-    ax.legend(ncol=2, loc="lower left", frameon=True)
+    ax.set_xticks(x, ["Acc.", "Prec.", "Recall", r"$F_1$", "Cov."])
+    ax.set_ylim(0.32, 1.01)
+    axes_style(ax, "Evaluation criterion", "Classification estimate")
+    ax.legend(ncol=2, loc="lower right", frameon=True)
     save(fig, "figure_storage_1b_cumulative.pdf")
 
 
@@ -547,210 +555,82 @@ def panel_2d_evidence_profiles() -> None:
     save(fig, "figure_behavior_2d_observables.pdf")
 
 
-def interval_summary(values: np.ndarray) -> tuple[float, float, float, float]:
-    values = np.asarray(values, dtype=float)
-    return (
-        float(values.mean()),
-        float(np.median(values)),
-        float(np.quantile(values, 0.05)),
-        float(np.quantile(values, 0.95)),
-    )
-
-
-def draw_interval_panel(
-    ax: plt.Axes,
-    groups: list[np.ndarray],
-    labels: list[str],
-    *,
-    xlabel: str,
+def draw_ablation_pair(
+    first_key: str,
+    second_key: str,
+    first_label: str,
+    second_label: str,
     ylabel: str,
-    horizontal: bool,
-    log_axis: bool = False,
+    output_name: str,
+    *,
+    runtime: bool = False,
 ) -> None:
-    summaries = np.asarray([interval_summary(values) for values in groups])
-    positions = np.arange(len(groups))
-    mean, median, lower, upper = summaries.T
-    if horizontal:
-        ax.errorbar(
-            mean,
-            positions,
-            xerr=np.vstack([mean - lower, upper - mean]),
-            fmt="o",
-            color="#d62728",
-            ecolor="black",
-            elinewidth=1.4,
-            capsize=4.0,
-            markersize=7.0,
-            label="Mean",
-        )
-        ax.scatter(
-            median,
-            positions,
-            marker="D",
-            s=48,
-            facecolor="white",
-            edgecolor="#1f77b4",
-            linewidth=1.4,
-            label="Median",
-            zorder=4,
-        )
-        ax.set_yticks(positions, labels)
-        ax.invert_yaxis()
-        if log_axis:
-            ax.set_xscale("log")
-        ax.grid(axis="x", linestyle=":", linewidth=0.9, alpha=0.3)
-    else:
-        ax.errorbar(
-            positions,
-            mean,
-            yerr=np.vstack([mean - lower, upper - mean]),
-            fmt="o",
-            color="#d62728",
-            ecolor="black",
-            elinewidth=1.4,
-            capsize=4.0,
-            markersize=7.0,
-            label="Mean",
-        )
-        ax.scatter(
-            positions,
-            median,
-            marker="D",
-            s=48,
-            facecolor="white",
-            edgecolor="#1f77b4",
-            linewidth=1.4,
-            label="Median",
-            zorder=4,
-        )
-        ax.set_xticks(positions, labels, rotation=14)
-        if log_axis:
-            ax.set_yscale("log")
-        ax.grid(axis="y", linestyle=":", linewidth=0.9, alpha=0.3)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    ax.set_axisbelow(True)
-    ax.legend(ncol=2, loc="upper left", frameon=True)
-    ax.text(
-        0.98,
-        0.04,
-        "whisker: p05--p95",
-        transform=ax.transAxes,
-        ha="right",
-        va="bottom",
-        fontsize=11,
-        color="0.35",
-    )
-
-
-def diagnostics_3a_stage_intervals() -> None:
-    data = pd.read_csv(RAW / "full_results.csv")
-    behavior = data.loc[data["safety_category"].eq("behavior")]
-    stages = [
-        ("artifact_extraction_ms", "Artifact"),
-        ("storage_analysis_ms", "Layout"),
-        ("function_mapping_ms", "Mapping"),
-        ("product_program_ms", "Relational"),
-        ("counterexample_replay_ms", "Replay"),
-    ]
-    fig, ax = plt.subplots(figsize=(6.4, 6.4))
-    draw_interval_panel(
-        ax,
-        [behavior[column].to_numpy() for column, _label in stages],
-        [label for _column, label in stages],
-        xlabel="Latency (ms, log scale)",
-        ylabel="Pipeline stage",
-        horizontal=True,
-        log_axis=True,
-    )
-    save(fig, "figure_diagnostics_3a_stage_intervals.pdf")
-
-
-def diagnostics_3b_verification_intervals() -> None:
-    data = pd.read_csv(RAW / "full_results.csv")
-    data = data.loc[data["safety_category"].eq("behavior")].copy()
-    data["semantic_class"] = data["mutation_operator"].map(BEHAVIOR_GROUP)
-    fig, ax = plt.subplots(figsize=(6.4, 6.4))
-    draw_interval_panel(
-        ax,
-        [
-            data.loc[data["semantic_class"].eq(label), "total_runtime_ms"].to_numpy()
-            for label in BEHAVIOR_ORDER
-        ],
-        BEHAVIOR_DISPLAY,
-        xlabel="Semantic class",
-        ylabel="Verification latency (ms)",
-        horizontal=False,
-    )
-    save(fig, "figure_diagnostics_3b_verification_intervals.pdf")
-
-
-def diagnostics_3c_replay_intervals() -> None:
-    replay = pd.read_csv(RAW / "evm_replay.csv")
-    with (ROOT / "dataset" / "metadata" / "pairs.csv").open(
-        encoding="utf-8", newline=""
-    ) as handle:
-        operators = {
-            row["pair_id"]: row["mutation_operator"] for row in csv.DictReader(handle)
-        }
-    replay["semantic_class"] = replay["pair_id"].map(
-        lambda pair_id: BEHAVIOR_GROUP[operators[pair_id]]
-    )
-    fig, ax = plt.subplots(figsize=(6.4, 6.4))
-    draw_interval_panel(
-        ax,
-        [
-            replay.loc[replay["semantic_class"].eq(label), "runtime_ms"].to_numpy()
-            for label in BEHAVIOR_ORDER
-        ],
-        BEHAVIOR_DISPLAY,
-        xlabel="Counterexample class",
-        ylabel="Anvil replay latency (ms)",
-        horizontal=False,
-    )
-    save(fig, "figure_diagnostics_3c_replay_intervals.pdf")
-
-
-def diagnostics_3d_ablation_profiles() -> None:
     data = pd.read_csv(SUMMARY / "ablation_summary.csv").set_index("variant")
     variants = [
-        ("Full", "UG"),
-        ("NameOnly", "ID"),
         ("NoBehavior", r"$-\mathrm{Beh.}$"),
+        ("NameOnly", "ID"),
+        ("SlotOffsetType", "S+T"),
         ("NoStorageType", r"$-\tau$"),
+        ("NoReplay", r"$-\mathrm{Rep.}$"),
+        ("Full", "UG"),
         ("NoSkipUnchanged", "All"),
     ]
-    criteria = ["accuracy", "precision", "recall", "f1", "coverage"]
-    x = np.arange(len(criteria))
+    x = np.arange(len(variants))
+    if runtime:
+        first = np.asarray([data.loc[key, first_key] for key, _ in variants])
+        second = np.asarray([data.loc[key, second_key] for key, _ in variants])
+    else:
+        estimates = [classification_estimates(data.loc[key]) for key, _ in variants]
+        first = np.asarray([row[first_key] for row in estimates])
+        second = np.asarray([row[second_key] for row in estimates])
     colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
-    fig, ax = plt.subplots(figsize=(6.4, 6.4))
-    for idx, (variant, label) in enumerate(variants):
-        row = data.loc[variant]
-        decided = 180 * (1.0 - row["unknown_rate"] - row["timeout_rate"])
-        coverage = (decided + 0.5) / 181.0
-        values = np.asarray(
-            [
-                row["accuracy"],
-                row["precision"],
-                row["recall"],
-                row["f1"],
-                coverage,
-            ],
-            dtype=float,
-        )
-        smooth_profile(
-            ax,
-            x,
-            values,
-            color=colors[idx],
-            marker=["o", "s", "^", "D", "v"][idx],
-            label=label,
-        )
-    ax.set_xticks(x, ["Accuracy", "Precision", "Recall", r"$F_1$", "Coverage"])
-    ax.set_ylim(0.32, 1.02)
-    axes_style(ax, "Evaluation criterion", "Classification estimate")
-    ax.legend(ncol=2, loc="lower right", frameon=True)
-    save(fig, "figure_diagnostics_3d_ablation_profiles.pdf")
+    fig, ax = plt.subplots(figsize=(7.2, 7.2))
+    smooth_profile(
+        ax, x, first, color=colors[0], marker="o", label=first_label, linewidth=2.2
+    )
+    smooth_profile(
+        ax, x, second, color=colors[1], marker="s", label=second_label, linewidth=2.2
+    )
+    ax.set_xticks(x, [label for _key, label in variants])
+    if not runtime:
+        ax.set_ylim(0.30, 1.01)
+    axes_style(ax, "Ablation configuration", ylabel)
+    ax.legend(ncol=1, loc="upper right", frameon=True)
+    save(fig, output_name)
+
+
+def diagnostics_3a_quality_profiles() -> None:
+    draw_ablation_pair(
+        "precision",
+        "recall",
+        "Precision",
+        "Recall",
+        "Classification estimate",
+        "figure_diagnostics_3a_quality.pdf",
+    )
+
+
+def diagnostics_3b_decision_profiles() -> None:
+    draw_ablation_pair(
+        "accuracy",
+        "coverage",
+        "Accuracy",
+        "Coverage",
+        "Decision estimate",
+        "figure_diagnostics_3b_decision.pdf",
+    )
+
+
+def diagnostics_3c_runtime_profiles() -> None:
+    draw_ablation_pair(
+        "median_runtime_ms",
+        "p95_runtime_ms",
+        "Median",
+        "p95",
+        "End-to-end latency (ms)",
+        "figure_diagnostics_3c_runtime.pdf",
+        runtime=True,
+    )
 
 
 def extra_ablation_bars() -> None:
@@ -961,28 +841,34 @@ def scalability_paths() -> None:
 
 def main() -> None:
     FIGURES.mkdir(parents=True, exist_ok=True)
+    for obsolete_name in [
+        "figure_diagnostics_3a_stage_intervals.pdf",
+        "figure_diagnostics_3b_verification_intervals.pdf",
+        "figure_diagnostics_3c_replay_intervals.pdf",
+        "figure_diagnostics_3d_ablation_profiles.pdf",
+    ]:
+        (FIGURES / obsolete_name).unlink(missing_ok=True)
     configure()
     panel_1a_storage_profile()
-    panel_1b_storage_metric_profile()
+    panel_1b_ablation_profile()
     panel_1c_storage_latency_kde()
     panel_1d_storage_evidence_profile()
     panel_2a_behavior_outcome_profile()
     panel_2b_behavior_latency_kde()
     panel_2c_replay_quantiles()
     panel_2d_evidence_profiles()
-    diagnostics_3a_stage_intervals()
-    diagnostics_3b_verification_intervals()
-    diagnostics_3c_replay_intervals()
-    diagnostics_3d_ablation_profiles()
+    diagnostics_3a_quality_profiles()
+    diagnostics_3b_decision_profiles()
+    diagnostics_3c_runtime_profiles()
     scalability_obligations()
     scalability_paths()
     manifest = {
         "format": "independent vector PDF panels",
-        "font_size_pt": 18,
+        "font_size_pt": 21,
         "style": "Matplotlib default typography and color cycle",
         "panel_types": {
             "1a": "shape-preserving posterior mutation-family profiles",
-            "1b": "connected multi-metric method profile",
+            "1b": "shape-preserving multi-metric ablation profile",
             "1c": "log-time Gaussian kernel density",
             "1d": "connected evidence profile",
             "2a": "connected detection profile with aggregate inset",
@@ -991,10 +877,9 @@ def main() -> None:
             "2d": "shape-preserving posterior replay-evidence profiles",
             "scaling-a": "obligation scaling with interquartile band and inset",
             "scaling-b": "symbolic-path scaling with binned medians and OLS trend",
-            "3a": "pipeline-stage mean, median, and p05--p95 intervals",
-            "3b": "verification-time mean, median, and p05--p95 intervals",
-            "3c": "replay-time mean, median, and p05--p95 intervals",
-            "3d": "shape-preserving multi-metric ablation profiles",
+            "3a": "shape-preserving precision and recall ablation profiles",
+            "3b": "shape-preserving accuracy and coverage ablation profiles",
+            "3c": "shape-preserving median and p95 runtime ablation profiles",
         },
         "note": "No experimental value is cosmetically altered.",
         "figures": sorted(path.name for path in FIGURES.glob("*.pdf")),
