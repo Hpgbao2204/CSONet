@@ -1,4 +1,4 @@
-"""End-to-end pair analysis with per-stage profiling."""
+"""Staged pair analysis with per-stage profiling."""
 
 from __future__ import annotations
 
