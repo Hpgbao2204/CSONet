@@ -11,6 +11,7 @@ import warnings
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 from scipy.stats import beta as beta_dist
@@ -102,6 +103,56 @@ def axes_style(ax: plt.Axes, xlabel: str, ylabel: str) -> None:
     ax.set_ylabel(ylabel, labelpad=8)
     ax.grid(axis="y", linestyle=":", linewidth=0.9, alpha=0.3)
     ax.set_axisbelow(True)
+
+
+def marker_only_legend(
+    ax: plt.Axes,
+    *,
+    handles: list | None = None,
+    labels: list[str] | None = None,
+    **kwargs,
+) -> mpl.legend.Legend:
+    """Render compact legends as colored points without line samples."""
+
+    if handles is None or labels is None:
+        handles, labels = ax.get_legend_handles_labels()
+    point_handles = []
+    for handle in handles:
+        color = None
+        if hasattr(handle, "get_color"):
+            color = handle.get_color()
+        if color is None and hasattr(handle, "get_facecolor"):
+            face = np.asarray(handle.get_facecolor())
+            if face.size:
+                color = face.reshape(-1, face.shape[-1])[0]
+        if color is None and hasattr(handle, "patches") and handle.patches:
+            color = handle.patches[0].get_facecolor()
+        if color is None:
+            color = "black"
+        if not isinstance(color, str):
+            color_array = np.asarray(color).reshape(-1)
+            if color_array.size >= 3:
+                color = tuple(color_array[:3])
+        point_handles.append(
+            Line2D(
+                [],
+                [],
+                linestyle="None",
+                marker="o",
+                markersize=9,
+                markerfacecolor=color,
+                markeredgecolor="black",
+                markeredgewidth=0.45,
+            )
+        )
+    return ax.legend(
+        point_handles,
+        labels,
+        handlelength=0,
+        handletextpad=0.55,
+        columnspacing=0.9,
+        **kwargs,
+    )
 
 
 def smooth_profile(
@@ -229,7 +280,7 @@ def panel_1a_storage_profile() -> None:
     ax.set_xticks(x, ["Type", "Assembly", "Root", "Decl.", "Overall"])
     ax.set_ylim(0.01, 1.02)
     axes_style(ax, "Storage-mutation family", "Posterior detection rate")
-    ax.legend(ncol=2, loc="lower right", frameon=True)
+    marker_only_legend(ax, ncol=2, loc="lower right", frameon=True)
     save(fig, "figure_storage_1a_profile.pdf")
 
 
@@ -277,7 +328,7 @@ def panel_1b_ablation_profile() -> None:
     ax.set_xticks(x, ["Acc.", "Prec.", "Recall", r"$F_1$", "Cov."])
     ax.set_ylim(0.32, 1.01)
     axes_style(ax, "Evaluation criterion", "Classification estimate")
-    ax.legend(ncol=2, loc="lower right", frameon=True)
+    marker_only_legend(ax, ncol=2, loc="lower right", frameon=True)
     save(fig, "figure_storage_1b_cumulative.pdf")
 
 
@@ -353,10 +404,10 @@ def panel_1c_storage_latency_kde() -> None:
         ax.fill_between(
             np.power(10.0, grid), density, color=colors[idx], alpha=0.045
         )
-    axes_style(ax, "Storage-analysis latency (ms, log scale)", "Kernel density")
+    axes_style(ax, "Storage-analysis latency", "Kernel density")
     ax.grid(axis="x", linestyle=":", linewidth=0.9, alpha=0.3)
     ax.set_xscale("log")
-    ax.legend(ncol=2, loc="upper left", frameon=True)
+    marker_only_legend(ax, ncol=2, loc="upper left", frameon=True)
     save(fig, "figure_storage_1c_sensitivity.pdf")
 
 
@@ -407,7 +458,7 @@ def panel_1d_storage_evidence_profile() -> None:
         ha="right",
     )
     axes_style(ax, "Evidence dimension", "Observed cases")
-    ax.legend(ncol=2, loc="upper left", frameon=True)
+    marker_only_legend(ax, ncol=2, loc="upper left", frameon=True)
     save(fig, "figure_storage_1d_operators.pdf")
 
 
@@ -465,7 +516,8 @@ def panel_2a_behavior_outcome_profile() -> None:
     ax.set_xticks(x, BEHAVIOR_DISPLAY)
     ax.set_ylim(0.01, 1.02)
     axes_style(ax, "Semantic class", "Jeffreys outcome estimate")
-    ax.legend(
+    marker_only_legend(
+        ax,
         loc="upper center",
         ncol=1,
         frameon=True,
@@ -500,7 +552,7 @@ def panel_2b_behavior_latency_kde() -> None:
         ax.fill_between(grid, density, color=colors[idx], alpha=0.045)
     axes_style(ax, "Verification latency (ms)", "Kernel density")
     ax.grid(axis="x", linestyle=":", alpha=0.3)
-    ax.legend(loc="upper right", frameon=True)
+    marker_only_legend(ax, loc="upper right", frameon=True)
     save(fig, "figure_behavior_2b_latency.pdf")
 
 
@@ -536,7 +588,7 @@ def panel_2c_replay_quantiles() -> None:
         )
     axes_style(ax, "Empirical quantile", "Anvil replay latency (ms)")
     ax.set_xlim(0.04, 0.96)
-    ax.legend(loc="upper left", frameon=True)
+    marker_only_legend(ax, loc="upper left", frameon=True)
     save(fig, "figure_behavior_2c_replay.pdf")
 
 
@@ -586,7 +638,7 @@ def panel_2d_evidence_profiles() -> None:
     ax.set_xticks(x, BEHAVIOR_DISPLAY)
     ax.set_ylim(0.01, 1.02)
     axes_style(ax, "Semantic class", "Posterior evidence support")
-    ax.legend(ncol=3, loc="upper center", frameon=True)
+    marker_only_legend(ax, ncol=3, loc="upper center", frameon=True)
     save(fig, "figure_behavior_2d_observables.pdf")
 
 
@@ -643,7 +695,7 @@ def diagnostics_3a_quality_profiles() -> None:
     ax.set_xticks(x, labels)
     ax.set_ylim(0.30, 1.01)
     axes_style(ax, "Ablation configuration", "Classification estimate")
-    ax.legend(ncol=1, loc="upper right", frameon=True)
+    marker_only_legend(ax, ncol=1, loc="upper right", frameon=True)
     save(fig, "figure_diagnostics_3a_quality.pdf")
 
 
@@ -698,7 +750,7 @@ def diagnostics_3b_decision_profiles() -> None:
     ax.set_xticks(x, labels)
     ax.set_ylim(0.30, 1.01)
     axes_style(ax, "Ablation configuration", "Decision estimate")
-    ax.legend(ncol=1, loc="upper right", frameon=True)
+    marker_only_legend(ax, ncol=1, loc="upper right", frameon=True)
     save(fig, "figure_diagnostics_3b_decision.pdf")
 
 
@@ -726,7 +778,7 @@ def diagnostics_3c_runtime_profiles() -> None:
         x,
         q1,
         q3,
-        color=colors[0],
+        color=colors[4],
         alpha=0.16,
         label="IQR",
     )
@@ -765,11 +817,12 @@ def diagnostics_3c_runtime_profiles() -> None:
     axes_style(ax, "Ablation configuration", "Analyzer latency (ms)")
     handles, legend_labels = ax.get_legend_handles_labels()
     twin_handles, twin_labels = twin.get_legend_handles_labels()
-    ax.legend(
-        handles + twin_handles,
-        legend_labels + twin_labels,
+    marker_only_legend(
+        ax,
+        handles=handles + twin_handles,
+        labels=legend_labels + twin_labels,
         ncol=2,
-        loc="upper center",
+        loc="center right",
         frameon=True,
     )
     save(fig, "figure_diagnostics_3c_runtime.pdf")
@@ -822,7 +875,7 @@ def extra_ablation_bars() -> None:
     axes_style(ax, "Classification estimate", "Analyzer configuration")
     ax.grid(axis="x", linestyle=":", alpha=0.3)
     ax.grid(axis="y", visible=False)
-    ax.legend(ncol=3, loc="lower right", frameon=True)
+    marker_only_legend(ax, ncol=3, loc="lower right", frameon=True)
     save(fig, "figure_ablation_3a_metrics.pdf")
 
 
@@ -859,7 +912,7 @@ def extra_stage_composition() -> None:
         bottom += values
     ax.set_xticks(x, ["Safe", "Storage", "Behavior"])
     axes_style(ax, "Upgrade class", "Median stage composition (ms)")
-    ax.legend(ncol=2, loc="upper left", frameon=True)
+    marker_only_legend(ax, ncol=2, loc="upper left", frameon=True)
     save(fig, "figure_stage_3b_composition.pdf")
 
 
@@ -922,7 +975,7 @@ def scalability_obligations() -> None:
         label="p95",
     )
     axes_style(ax, "Relational obligations", "Verification latency (ms)")
-    ax.legend(loc="upper left", frameon=True)
+    marker_only_legend(ax, loc="upper left", frameon=True)
 
     inset = ax.inset_axes([0.54, 0.07, 0.40, 0.30])
     spread = summary["p95"] / summary["median_ms"]
@@ -977,7 +1030,7 @@ def scalability_paths() -> None:
         label="OLS trend",
     )
     axes_style(ax, "Aggregate symbolic paths", "Verification latency (ms)")
-    ax.legend(loc="upper left", frameon=True)
+    marker_only_legend(ax, loc="upper left", frameon=True)
     save(fig, "figure_scalability_paths.pdf")
 
 
@@ -1008,6 +1061,7 @@ def main() -> None:
         "format": "independent vector PDF panels",
         "font_size_pt": 21,
         "legend_font_size_pt": 22,
+        "legend_style": "colored markers only",
         "style": "Matplotlib default typography and color cycle",
         "panel_types": {
             "1a": "shape-preserving posterior mutation-family profiles",
