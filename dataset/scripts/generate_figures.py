@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate data-dense, non-line-chart vector panels from saved CSVs."""
+"""Generate data-dense vector panels from saved CSVs."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.stats import gaussian_kde
+from scipy.interpolate import PchipInterpolator
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -55,24 +56,25 @@ BEHAVIOR_GROUP = {
     "revert_data_change": "Access",
 }
 BEHAVIOR_ORDER = ["Arithmetic", "State", "Events", "Access"]
+BEHAVIOR_DISPLAY = ["Arith.", "State", "Event", "Access"]
 
 METHODS = [
-    ("Full", "Proposed"),
-    ("NameOnly", "ID match"),
-    ("SlotOffsetType", "Slot/type"),
-    ("NoStorageType", "No type"),
+    ("Full", "UG"),
+    ("NameOnly", "ID"),
+    ("SlotOffsetType", "S+T"),
+    ("NoStorageType", r"$-\tau$"),
 ]
 ALL_METHOD_LABELS = [label for _, label in METHODS] + ["OZ"]
 def configure() -> None:
     mpl.rcdefaults()
     mpl.rcParams.update(
         {
-            "font.size": 18,
-            "axes.labelsize": 18,
-            "axes.titlesize": 18,
-            "legend.fontsize": 10,
-            "xtick.labelsize": 15,
-            "ytick.labelsize": 15,
+            "font.size": 21,
+            "axes.labelsize": 21,
+            "axes.titlesize": 21,
+            "legend.fontsize": 13,
+            "xtick.labelsize": 18,
+            "ytick.labelsize": 18,
             "pdf.fonttype": 42,
             "ps.fonttype": 42,
         }
@@ -87,7 +89,10 @@ def save(fig: plt.Figure, name: str) -> None:
         )
         fig.tight_layout(pad=0.9)
     # Keep the PDF media box exactly square for predictable four-panel assembly.
-    fig.savefig(FIGURES / name)
+    fig.savefig(
+        FIGURES / name,
+        metadata={"CreationDate": None, "ModDate": None},
+    )
     plt.close(fig)
 
 
@@ -96,6 +101,34 @@ def axes_style(ax: plt.Axes, xlabel: str, ylabel: str) -> None:
     ax.set_ylabel(ylabel, labelpad=8)
     ax.grid(axis="y", linestyle=":", linewidth=0.9, alpha=0.3)
     ax.set_axisbelow(True)
+
+
+def smooth_profile(
+    ax: plt.Axes,
+    x: np.ndarray,
+    y: np.ndarray,
+    *,
+    color: str,
+    marker: str,
+    label: str,
+    linewidth: float = 2.0,
+) -> None:
+    """Connect exact observations with shape-preserving cubic interpolation."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    dense_x = np.linspace(x.min(), x.max(), 320)
+    dense_y = PchipInterpolator(x, y)(dense_x)
+    ax.plot(dense_x, dense_y, color=color, linewidth=linewidth, label=label)
+    ax.scatter(
+        x,
+        y,
+        marker=marker,
+        s=48,
+        color=color,
+        edgecolor="black",
+        linewidth=0.4,
+        zorder=4,
+    )
 
 
 def jeffreys(successes: pd.Series, totals: pd.Series) -> np.ndarray:
@@ -128,98 +161,86 @@ def storage_records(include_safe: bool = False) -> pd.DataFrame:
 def panel_1a_storage_profile() -> None:
     data = storage_records()
     data["detected"] = data["verdict"].eq("Unsafe").astype(int)
-    summary = (
-        data.groupby(["storage_class", "method"])["detected"]
-        .agg(successes="sum", total="count")
-        .reset_index()
+    family_order = ["Types", "Assembly", "Roots", "Declarations"]
+    grouped = data.groupby(["method", "storage_class"])["detected"].agg(
+        ["sum", "count"]
     )
     fig, ax = plt.subplots(figsize=(6.4, 6.4))
-    x = np.arange(len(STORAGE_ORDER))
+    x = np.arange(len(family_order) + 1)
     colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
-    for idx, label in enumerate(ALL_METHOD_LABELS):
-        part = (
-            summary.loc[summary["method"].eq(label)]
-            .set_index("storage_class")
-            .reindex(STORAGE_ORDER)
-        )
-        estimate = jeffreys(part["successes"], part["total"])
-        lane = len(ALL_METHOD_LABELS) - idx - 1
-        baseline = lane * 1.18
-        ax.axhspan(
-            baseline,
-            baseline + 1.0,
-            color=colors[idx],
-            alpha=0.035,
-            linewidth=0,
-        )
-        ax.hlines(
-            baseline + 0.5,
-            x.min(),
-            x.max(),
-            color="0.82",
-            linestyle=":",
-            linewidth=0.8,
-            zorder=0,
-        )
-        ax.plot(
-            x,
-            baseline + estimate,
-            color=colors[idx],
-            marker=["o", "s", "^", "D", "v"][idx],
-            markersize=7.0,
-            markeredgecolor="black",
-            markeredgewidth=0.45,
-            linewidth=1.75,
-        )
-    ax.set_xticks(x, ["Declarations", "Types", "Roots", "Assembly"], rotation=16)
-    lane_centers = [
-        (len(ALL_METHOD_LABELS) - idx - 1) * 1.18 + 0.5
-        for idx in range(len(ALL_METHOD_LABELS))
+    profiles = [
+        ("UG", "UG", "o", colors[0]),
+        ("ID", "ID", "s", colors[1]),
+        (r"$-\tau$", r"$-\tau$", "D", colors[3]),
+        ("S+T", "S+T/OZ", "v", colors[4]),
     ]
-    ax.set_yticks(lane_centers, ALL_METHOD_LABELS)
-    ax.set_ylim(-0.08, (len(ALL_METHOD_LABELS) - 1) * 1.18 + 1.08)
-    axes_style(ax, "Mutation class", "Method (each lane spans 0 to 1)")
-    ax.grid(axis="y", visible=False)
+    for source, label, marker, color in profiles:
+        family_values = []
+        for storage_class in family_order:
+            row = grouped.loc[(source, storage_class)]
+            family_values.append((row["sum"] + 0.5) / (row["count"] + 1))
+        part = data.loc[data["method"].eq(source), "detected"]
+        overall = (part.sum() + 0.5) / (len(part) + 1)
+        smooth_profile(
+            ax,
+            x,
+            np.asarray(family_values + [overall], dtype=float),
+            color=color,
+            marker=marker,
+            label=label,
+        )
+    ax.set_xticks(x, ["Type", "Assembly", "Root", "Decl.", "Overall"])
+    ax.set_ylim(0.01, 1.02)
+    axes_style(ax, "Storage-mutation family", "Posterior detection rate")
+    ax.legend(ncol=2, loc="lower center", frameon=True)
     save(fig, "figure_storage_1a_profile.pdf")
 
 
-def panel_1b_storage_metric_profile() -> None:
-    data = storage_records(include_safe=True)
-    rows = []
-    for method in ALL_METHOD_LABELS:
-        part = data.loc[data["method"].eq(method)]
-        expected_unsafe = part["safety_category"].eq("storage")
-        decided = ~part["verdict"].eq("Unknown")
-        tp = int((expected_unsafe & part["verdict"].eq("Unsafe")).sum())
-        fn = int((expected_unsafe & part["verdict"].eq("Safe")).sum())
-        fp = int((~expected_unsafe & part["verdict"].eq("Unsafe")).sum())
-        tn = int((~expected_unsafe & part["verdict"].eq("Safe")).sum())
-        precision = (tp + 0.5) / (tp + fp + 1)
-        recall = (tp + 0.5) / (tp + fn + 1)
-        specificity = (tn + 0.5) / (tn + fp + 1)
-        f1 = 2 * precision * recall / (precision + recall)
-        coverage = (int(decided.sum()) + 0.5) / (len(part) + 1)
-        rows.append([precision, recall, specificity, f1, coverage])
-    metrics = np.asarray(rows)
-    fig, ax = plt.subplots(figsize=(6.4, 6.4))
-    x = np.arange(metrics.shape[1])
+def classification_estimates(row: pd.Series) -> dict[str, float]:
+    """Return boundary-safe Jeffreys estimates from one ablation summary row."""
+    tp, tn, fp, fn = (float(row[key]) for key in ("tp", "tn", "fp", "fn"))
+    precision = (tp + 0.5) / (tp + fp + 1.0)
+    recall = (tp + 0.5) / (tp + fn + 1.0)
+    accuracy = (tp + tn + 0.5) / (tp + tn + fp + fn + 1.0)
+    f1 = 2.0 * precision * recall / (precision + recall)
+    decided = 180.0 * (1.0 - row["unknown_rate"] - row["timeout_rate"])
+    coverage = (decided + 0.5) / 181.0
+    return {
+        "accuracy": accuracy,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "coverage": coverage,
+    }
+
+
+def panel_1b_ablation_profile() -> None:
+    data = pd.read_csv(SUMMARY / "ablation_summary.csv").set_index("variant")
+    variants = [
+        ("Full", "UG"),
+        ("NameOnly", "ID"),
+        ("NoBehavior", r"$-\mathrm{Beh.}$"),
+        ("NoStorageType", r"$-\tau$"),
+        ("NoSkipUnchanged", "All"),
+    ]
+    criteria = ["accuracy", "precision", "recall", "f1", "coverage"]
+    x = np.arange(len(criteria))
     colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
-    for idx, method in enumerate(ALL_METHOD_LABELS):
-        ax.plot(
+    fig, ax = plt.subplots(figsize=(6.4, 6.4))
+    for idx, (variant, label) in enumerate(variants):
+        estimates = classification_estimates(data.loc[variant])
+        smooth_profile(
+            ax,
             x,
-            metrics[idx],
+            np.asarray([estimates[key] for key in criteria], dtype=float),
             color=colors[idx],
             marker=["o", "s", "^", "D", "v"][idx],
-            linewidth=1.75,
-            markersize=7.0,
-            markeredgecolor="black",
-            markeredgewidth=0.45,
-            label=method,
+            label=label,
         )
-    ax.set_xticks(x, ["Precision", "Recall", "Specificity", r"$F_1$", "Coverage"], rotation=16)
-    ax.set_ylim(0.02, 1.03)
-    axes_style(ax, "Evaluation criterion", "Jeffreys estimate")
-    ax.legend(ncol=2, loc="lower left", frameon=True)
+    ax.set_xticks(x, ["Acc.", "Prec.", "Recall", r"$F_1$", "Cov."])
+    ax.set_ylim(0.32, 1.01)
+    axes_style(ax, "Evaluation criterion", "Classification estimate")
+    ax.legend(ncol=2, loc="lower right", frameon=True)
     save(fig, "figure_storage_1b_cumulative.pdf")
 
 
@@ -298,7 +319,7 @@ def panel_1c_storage_latency_kde() -> None:
     axes_style(ax, "Storage-analysis latency (ms, log scale)", "Kernel density")
     ax.grid(axis="x", linestyle=":", linewidth=0.9, alpha=0.3)
     ax.set_xscale("log")
-    ax.legend(ncol=2, loc="lower right", frameon=True)
+    ax.legend(ncol=2, loc="upper right", frameon=True)
     save(fig, "figure_storage_1c_sensitivity.pdf")
 
 
@@ -349,7 +370,7 @@ def panel_1d_storage_evidence_profile() -> None:
         ha="right",
     )
     axes_style(ax, "Evidence dimension", "Observed cases")
-    ax.legend(ncol=2, loc="upper left", frameon=True)
+    ax.legend(ncol=2, loc="upper right", frameon=True)
     save(fig, "figure_storage_1d_operators.pdf")
 
 
@@ -389,7 +410,7 @@ def panel_2a_behavior_outcome_profile() -> None:
             markeredgecolor="black",
             markeredgewidth=0.45,
             linewidth=2.0,
-            label=semantic_class,
+            label=BEHAVIOR_DISPLAY[idx],
         )
     ax.set_xticks(x, ["Detected", "Missed", "Unknown"])
     ax.set_ylim(0.01, 1.02)
@@ -439,7 +460,7 @@ def panel_2b_behavior_latency_kde() -> None:
             markevery=46,
             markersize=5.0,
             linewidth=1.75,
-            label=label,
+            label=BEHAVIOR_DISPLAY[idx],
         )
         ax.fill_between(grid, density, color=colors[idx], alpha=0.045)
     axes_style(ax, "Verification latency (ms)", "Kernel density")
@@ -476,7 +497,7 @@ def panel_2c_replay_quantiles() -> None:
             markevery=3,
             markersize=5.5,
             linewidth=1.75,
-            label=label,
+            label=BEHAVIOR_DISPLAY[idx],
         )
     axes_style(ax, "Empirical quantile", "Anvil replay latency (ms)")
     ax.set_xlim(0.04, 0.96)
@@ -484,93 +505,132 @@ def panel_2c_replay_quantiles() -> None:
     save(fig, "figure_behavior_2c_replay.pdf")
 
 
-def panel_2d_observable_upset() -> None:
-    """Show which observable dimensions jointly validate each counterexample."""
+def panel_2d_evidence_profiles() -> None:
+    """Plot posterior support of each replay channel across semantic classes."""
     replay = pd.read_csv(RAW / "evm_replay.csv")
-    dimensions = [
-        ("status_or_return", "Return"),
-        ("transaction_status", "Tx status"),
-        ("events", "Events"),
-        ("storage", "Storage"),
-        ("external_trace", "Call trace"),
-    ]
+    dimensions = [("status_or_return", "Return"), ("transaction_status", "Tx"),
+                  ("events", "Event"), ("storage", "Storage"),
+                  ("external_trace", "Call")]
+    with (ROOT / "dataset" / "metadata" / "pairs.csv").open(
+        encoding="utf-8", newline=""
+    ) as handle:
+        operators = {
+            row["pair_id"]: row["mutation_operator"] for row in csv.DictReader(handle)
+        }
+    replay["semantic_class"] = replay["pair_id"].map(
+        lambda pair_id: BEHAVIOR_GROUP[operators[pair_id]]
+    )
     parsed = replay["dimensions"].map(ast.literal_eval)
-    patterns = pd.DataFrame(
+    evidence = pd.DataFrame(
         [{key: bool(row.get(key, False)) for key, _ in dimensions} for row in parsed]
     )
-    counts = (
-        patterns.value_counts(sort=True)
-        .rename("count")
-        .reset_index()
-        .sort_values("count", ascending=False, kind="stable")
-        .reset_index(drop=True)
-    )
+    evidence["semantic_class"] = replay["semantic_class"].to_numpy()
+    counts = evidence.groupby("semantic_class")[
+        [key for key, _ in dimensions]
+    ].sum().reindex(BEHAVIOR_ORDER)
+    totals = evidence.groupby("semantic_class").size().reindex(BEHAVIOR_ORDER)
 
-    fig = plt.figure(figsize=(6.4, 6.4))
-    grid = fig.add_gridspec(2, 1, height_ratios=[1.35, 1.0], hspace=0.04)
-    ax_count = fig.add_subplot(grid[0])
-    ax_matrix = fig.add_subplot(grid[1], sharex=ax_count)
-    x = np.arange(len(counts))
+    fig, ax = plt.subplots(figsize=(6.4, 6.4))
     colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
-
-    bars = ax_count.bar(
-        x,
-        counts["count"],
-        width=0.68,
-        color=colors[0],
-        edgecolor="black",
-        linewidth=0.55,
-    )
-    ax_count.bar_label(bars, padding=3, fontsize=14)
-    ax_count.set_ylabel("Validated cases")
-    ax_count.grid(axis="y", linestyle=":", linewidth=0.9, alpha=0.3)
-    ax_count.set_axisbelow(True)
-    ax_count.tick_params(axis="x", bottom=False, labelbottom=False)
-    ax_count.spines["bottom"].set_visible(False)
-
-    for column in x:
-        active_rows = [
-            idx
-            for idx, (dimension_key, _dimension_label) in enumerate(dimensions)
-            if bool(counts.loc[column, dimension_key])
-        ]
-        if len(active_rows) > 1:
-            ax_matrix.plot(
-                [column, column],
-                [min(active_rows), max(active_rows)],
-                color="0.25",
-                linewidth=1.2,
-                zorder=1,
-            )
-    for row_idx, (key, _label) in enumerate(dimensions):
-        active = counts[key].to_numpy(dtype=bool)
-        ax_matrix.scatter(
-            x[~active],
-            np.full((~active).sum(), row_idx),
-            marker="s",
-            s=55,
-            facecolor="white",
-            edgecolor="0.72",
-            linewidth=0.8,
+    x = np.arange(len(BEHAVIOR_ORDER))
+    markers = ["o", "s", "^", "D", "v"]
+    for idx, (channel, display) in enumerate(dimensions):
+        values = (
+            counts[channel].to_numpy(dtype=float) + 0.5
+        ) / (totals.to_numpy(dtype=float) + 1.0)
+        smooth_profile(
+            ax,
+            x,
+            values,
+            color=colors[idx],
+            marker=markers[idx],
+            label={"Return": "Ret.", "Event": "Evt.", "Storage": "Sto."}.get(
+                display, display
+            ),
         )
-        ax_matrix.scatter(
-            x[active],
-            np.full(active.sum(), row_idx),
-            marker="s",
-            s=72,
-            facecolor=colors[0],
-            edgecolor="black",
-            linewidth=0.45,
-        )
-    ax_matrix.set_yticks(
-        np.arange(len(dimensions)), [label for _key, label in dimensions]
-    )
-    ax_matrix.invert_yaxis()
-    ax_matrix.set_xticks(x, [f"C{i + 1}" for i in x])
-    ax_matrix.set_xlabel("Observable combination")
-    ax_matrix.grid(axis="y", linestyle=":", linewidth=0.8, alpha=0.25)
-    ax_matrix.spines["top"].set_visible(False)
+    ax.set_xticks(x, BEHAVIOR_DISPLAY)
+    ax.set_ylim(0.01, 1.02)
+    axes_style(ax, "Semantic class", "Posterior evidence support")
+    ax.legend(ncol=3, loc="upper center", frameon=True)
     save(fig, "figure_behavior_2d_observables.pdf")
+
+
+def draw_ablation_pair(
+    first_key: str,
+    second_key: str,
+    first_label: str,
+    second_label: str,
+    ylabel: str,
+    output_name: str,
+    *,
+    runtime: bool = False,
+) -> None:
+    data = pd.read_csv(SUMMARY / "ablation_summary.csv").set_index("variant")
+    variants = [
+        ("NoBehavior", r"$-\mathrm{Beh.}$"),
+        ("NameOnly", "ID"),
+        ("SlotOffsetType", "S+T"),
+        ("NoStorageType", r"$-\tau$"),
+        ("NoReplay", r"$-\mathrm{Rep.}$"),
+        ("Full", "UG"),
+        ("NoSkipUnchanged", "All"),
+    ]
+    x = np.arange(len(variants))
+    if runtime:
+        first = np.asarray([data.loc[key, first_key] for key, _ in variants])
+        second = np.asarray([data.loc[key, second_key] for key, _ in variants])
+    else:
+        estimates = [classification_estimates(data.loc[key]) for key, _ in variants]
+        first = np.asarray([row[first_key] for row in estimates])
+        second = np.asarray([row[second_key] for row in estimates])
+    colors = mpl.rcParams["axes.prop_cycle"].by_key()["color"]
+    fig, ax = plt.subplots(figsize=(7.2, 7.2))
+    smooth_profile(
+        ax, x, first, color=colors[0], marker="o", label=first_label, linewidth=2.2
+    )
+    smooth_profile(
+        ax, x, second, color=colors[1], marker="s", label=second_label, linewidth=2.2
+    )
+    ax.set_xticks(x, [label for _key, label in variants])
+    if not runtime:
+        ax.set_ylim(0.30, 1.01)
+    axes_style(ax, "Ablation configuration", ylabel)
+    ax.legend(ncol=1, loc="upper right", frameon=True)
+    save(fig, output_name)
+
+
+def diagnostics_3a_quality_profiles() -> None:
+    draw_ablation_pair(
+        "precision",
+        "recall",
+        "Precision",
+        "Recall",
+        "Classification estimate",
+        "figure_diagnostics_3a_quality.pdf",
+    )
+
+
+def diagnostics_3b_decision_profiles() -> None:
+    draw_ablation_pair(
+        "accuracy",
+        "coverage",
+        "Accuracy",
+        "Coverage",
+        "Decision estimate",
+        "figure_diagnostics_3b_decision.pdf",
+    )
+
+
+def diagnostics_3c_runtime_profiles() -> None:
+    draw_ablation_pair(
+        "median_runtime_ms",
+        "p95_runtime_ms",
+        "Median",
+        "p95",
+        "End-to-end latency (ms)",
+        "figure_diagnostics_3c_runtime.pdf",
+        runtime=True,
+    )
 
 
 def extra_ablation_bars() -> None:
@@ -781,32 +841,45 @@ def scalability_paths() -> None:
 
 def main() -> None:
     FIGURES.mkdir(parents=True, exist_ok=True)
+    for obsolete_name in [
+        "figure_diagnostics_3a_stage_intervals.pdf",
+        "figure_diagnostics_3b_verification_intervals.pdf",
+        "figure_diagnostics_3c_replay_intervals.pdf",
+        "figure_diagnostics_3d_ablation_profiles.pdf",
+    ]:
+        (FIGURES / obsolete_name).unlink(missing_ok=True)
     configure()
     panel_1a_storage_profile()
-    panel_1b_storage_metric_profile()
+    panel_1b_ablation_profile()
     panel_1c_storage_latency_kde()
     panel_1d_storage_evidence_profile()
     panel_2a_behavior_outcome_profile()
     panel_2b_behavior_latency_kde()
     panel_2c_replay_quantiles()
-    panel_2d_observable_upset()
+    panel_2d_evidence_profiles()
+    diagnostics_3a_quality_profiles()
+    diagnostics_3b_decision_profiles()
+    diagnostics_3c_runtime_profiles()
     scalability_obligations()
     scalability_paths()
     manifest = {
         "format": "independent vector PDF panels",
-        "font_size_pt": 18,
+        "font_size_pt": 21,
         "style": "Matplotlib default typography and color cycle",
         "panel_types": {
-            "1a": "connected multi-method detection profile",
-            "1b": "connected multi-metric method profile",
+            "1a": "shape-preserving posterior mutation-family profiles",
+            "1b": "shape-preserving multi-metric ablation profile",
             "1c": "log-time Gaussian kernel density",
             "1d": "connected evidence profile",
             "2a": "connected detection profile with aggregate inset",
             "2b": "Gaussian kernel density",
             "2c": "connected replay quantile profile",
-            "2d": "UpSet-style observable combinations",
-            "3": "obligation scaling with interquartile band and inset",
-            "4": "symbolic-path scaling with binned medians and OLS trend",
+            "2d": "shape-preserving posterior replay-evidence profiles",
+            "scaling-a": "obligation scaling with interquartile band and inset",
+            "scaling-b": "symbolic-path scaling with binned medians and OLS trend",
+            "3a": "shape-preserving precision and recall ablation profiles",
+            "3b": "shape-preserving accuracy and coverage ablation profiles",
+            "3c": "shape-preserving median and p95 runtime ablation profiles",
         },
         "note": "No experimental value is cosmetically altered.",
         "figures": sorted(path.name for path in FIGURES.glob("*.pdf")),
