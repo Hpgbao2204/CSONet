@@ -114,6 +114,13 @@ async function setState(contract, layout, state, account, guardian) {
   );
   const key = mappingLocation(account, mappingEntry.slot);
   await rpc("anvil_setStorageAt", [address, key, word(state.balance)]);
+  if (byLabel.history) {
+    await rpc("anvil_setStorageAt", [
+      address,
+      toBeHex(BigInt(byLabel.history.slot)),
+      word(0)
+    ]);
+  }
   await rpc("anvil_setBalance", [address, toBeHex(10n ** 24n)]);
   await rpc("evm_mine", []);
   return key;
@@ -286,7 +293,6 @@ async function main() {
         )) {
           continue;
         }
-        const snapshot = await rpc("evm_snapshot", []);
         const started = process.hrtime.bigint();
         try {
           const signer = state.sender_owner ? owner : other;
@@ -342,8 +348,6 @@ async function main() {
             error: String(error.stack || error)
           });
           fs.writeFileSync(manifest.result_path, JSON.stringify(rows, null, 2));
-        } finally {
-          await rpc("evm_revert", [snapshot]);
         }
       }
       fs.writeFileSync(manifest.result_path, JSON.stringify(rows, null, 2));

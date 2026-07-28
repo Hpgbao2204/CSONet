@@ -7,6 +7,7 @@ import csv
 import itertools
 import json
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pandas as pd
@@ -85,7 +86,7 @@ def main() -> None:
     cache = ROOT / ".cache"
     cache.mkdir(exist_ok=True)
     results: list[dict] = []
-    case_batch_size = 8
+    case_batch_size = 4
     work_batches = []
     for pair in pairs:
         for case_start in range(0, len(pair["cases"]), case_batch_size):
@@ -100,7 +101,8 @@ def main() -> None:
                     }
                 ]
             )
-    for batch_index, batch_pairs in enumerate(work_batches):
+    def run_batch(item: tuple[int, list[dict]]) -> tuple[int, list[dict]]:
+        batch_index, batch_pairs = item
         batch_result = cache / f"safe_validation_batch_{batch_index:02d}.json"
         manifest = {
             "anvil_path": str(ROOT / ".tools" / "foundry" / "anvil.exe"),
@@ -121,13 +123,24 @@ def main() -> None:
             timeout=600,
         )
         batch_rows = json.loads(batch_result.read_text(encoding="utf-8"))
-        results.extend(batch_rows)
-        result_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
-        print(
-            f"checkpoint: {len(results)}/{len(pairs) * len(cases)} "
-            "Safe-state checks",
-            flush=True,
-        )
+        expected = sum(len(pair["cases"]) for pair in batch_pairs)
+        if len(batch_rows) != expected or any(row["error"] for row in batch_rows):
+            raise RuntimeError(
+                f"Safe-validation batch {batch_index} is incomplete: "
+                f"rows={len(batch_rows)}/{expected}"
+            )
+        return batch_index, batch_rows
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        completed_batches = executor.map(run_batch, enumerate(work_batches))
+        for _, batch_rows in completed_batches:
+            results.extend(batch_rows)
+            result_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
+            print(
+                f"checkpoint: {len(results)}/{len(pairs) * len(cases)} "
+                "Safe-state checks",
+                flush=True,
+            )
     rows = []
     for result in results:
         rows.append(
