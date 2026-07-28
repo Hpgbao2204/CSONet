@@ -242,6 +242,19 @@ def summarize(function: FunctionSource) -> FunctionSummary:
         "false",
     }
     unsupported = [condition for condition in guards if condition not in supported_conditions]
+    supported_expression = re.compile(
+        r"^(?:void|[A-Za-z_]\w*|\d+|[A-Za-z_]\w*[+-](?:[A-Za-z_]\w*|\d+))$"
+    )
+    expressions = [return_expr] + [
+        value
+        for key, value in writes.items()
+        if key not in {"history"} and not value.startswith("append(")
+    ]
+    unsupported_expressions = [
+        expression
+        for expression in expressions
+        if not supported_expression.match(expression)
+    ]
     return FunctionSummary(
         guards=tuple(guards),
         writes=tuple(sorted(writes.items())),
@@ -249,8 +262,8 @@ def summarize(function: FunctionSource) -> FunctionSummary:
         events=canonical_events,
         calls=calls,
         effect_order=tuple(effect_order),
-        supported=not unsupported,
-        unsupported_reason=", ".join(unsupported),
+        supported=not unsupported and not unsupported_expressions,
+        unsupported_reason=", ".join(unsupported + unsupported_expressions),
     )
 
 
@@ -325,7 +338,12 @@ def _observable_difference(one: FunctionSummary, two: FunctionSummary, env: dict
             formulae.append(BoolVal(True))
         else:
             formulae.append(_expr(one.return_expr, env) != _expr(two.return_expr, env))
-    if one.events != two.events or one.calls != two.calls or one.effect_order != two.effect_order:
+    call_order_relevant = any(step == "call" for step in one.effect_order + two.effect_order)
+    if (
+        one.events != two.events
+        or one.calls != two.calls
+        or (call_order_relevant and one.effect_order != two.effect_order)
+    ):
         formulae.append(BoolVal(True))
     return Or(*formulae) if formulae else BoolVal(False)
 
@@ -385,6 +403,17 @@ def check_equivalence(
     assumptions = [difference]
     if preserved_positive_amount_domain and "amount" in first.signature:
         assumptions.append(UGT(env["amount"], 0))
+    # Keep models directly replayable through the generated ABI and a local EVM.
+    assumptions.extend(
+        [
+            ULE(env["amount"], 1_000_000),
+            ULE(env["limit"], 1_000_000),
+            ULE(env["total"], 1_000_000),
+            ULE(env["balance"], 1_000_000),
+            env["call_ok"],
+            Not(env["owner_zero"]),
+        ]
+    )
     solver.add(*assumptions)
     status = solver.check()
     runtime_ms = (time.perf_counter_ns() - started) / 1e6
@@ -495,7 +524,12 @@ def _concrete_observation(summary: FunctionSummary, state: dict[str, Any]) -> tu
         for name, value in summary.writes
     )
     returned = summary.return_expr if summary.return_expr == "void" else _eval_expr(summary.return_expr, state)
-    return ("success", post, returned, summary.events, summary.calls, summary.effect_order)
+    order = (
+        summary.effect_order
+        if any(step == "call" for step in summary.effect_order)
+        else tuple()
+    )
+    return ("success", post, returned, summary.events, summary.calls, order)
 
 
 def differential_fuzz(

@@ -112,8 +112,15 @@ def analyze_pair(
     replay_ms = (_now() - started) / 1e6
 
     if not layout_safe:
-        verdict = "Unsafe"
-        reason = "storage compatibility violation"
+        concrete_layout_issues = [
+            issue for issue in layout_issues if issue.kind != "assembly_unresolved"
+        ]
+        if concrete_layout_issues:
+            verdict = "Unsafe"
+            reason = "storage compatibility violation"
+        else:
+            verdict = "Unknown"
+            reason = "computed assembly storage target is unresolved"
     elif not options.behavior:
         verdict = "Safe"
         reason = "behavior stage disabled"

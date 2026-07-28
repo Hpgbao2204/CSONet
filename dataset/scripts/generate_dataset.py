@@ -54,9 +54,11 @@ SAFE_OPERATORS = [
     "append_state_variable",
     "add_function",
     "add_event",
+    "rename_internal_state_variable",
     "rename_local_variable",
     "equivalent_expression_refactor",
     "extract_internal_function",
+    "commute_independent_writes",
     "valid_domain_guard",
     "consume_storage_gap",
 ]
@@ -72,6 +74,7 @@ STORAGE_OPERATORS = [
     "expand_storage_gap",
     "inline_assembly_legacy_slot_write",
     "namespace_collision",
+    "computed_assembly_slot_write",
 ]
 
 BEHAVIOR_OPERATORS = [
@@ -87,6 +90,10 @@ BEHAVIOR_OPERATORS = [
     "change_call_recipient",
     "external_call_order_change",
     "success_to_revert",
+    "conditional_state_update",
+    "conditional_event",
+    "revert_data_change",
+    "unsupported_hash_return",
 ]
 
 
@@ -205,6 +212,13 @@ def apply_safe(source: str, operator: str) -> tuple[str, str, str, str]:
         return insert_before_contract_end(source, code), "implementationVersion", "", "new selector only"
     if operator == "add_event":
         return source.replace("    event Initialized", "    event VersionAnnounced(uint256 version);\n    event Initialized", 1), "", "", "new event declaration only"
+    if operator == "rename_internal_state_variable":
+        changed = source.replace(
+            "uint64 internal inheritedEpoch;",
+            "uint64 internal epochCounter;",
+            1,
+        )
+        return changed, "", "inheritedEpoch", "internal identifier changes at the same physical location"
     if operator == "rename_local_variable":
         changed = source.replace("uint256 next = total + amount;", "uint256 updated = total + amount;", 1).replace("total = next;", "total = updated;", 1)
         return changed, "ACTION", "", "alpha-renaming"
@@ -217,6 +231,18 @@ def apply_safe(source: str, operator: str) -> tuple[str, str, str, str]:
         total = value;
     }""")
         return changed, "ACTION", "total", "semantics-preserving extraction"
+    if operator == "commute_independent_writes":
+        needle = "        total = next;\n        ITEMS[msg.sender] += amount;"
+        item_name = re.search(
+            r"mapping\(address => uint256\) public (\w+);", source
+        ).group(1)
+        concrete = needle.replace("ITEMS", item_name)
+        replacement = (
+            f"        {item_name}[msg.sender] += amount;\n"
+            "        total = next;"
+        )
+        changed = source.replace(concrete, replacement, 1)
+        return changed, "ACTION", "total", "independent storage writes commute before any interaction"
     if operator == "valid_domain_guard":
         changed = source.replace("        require(active, \"inactive\");", "        require(active, \"inactive\");\n        require(amount > 0, \"zero\");", 1)
         return changed, "ACTION", "", "preserved domain declares amount > 0"
@@ -272,6 +298,14 @@ def apply_storage(source: str, operator: str, use_gap: bool) -> tuple[str, str, 
         assembly { sstore(0, value) }
     }"""
         return insert_before_contract_end(source, code), "writeNamespace", "inheritedEpoch,guardian", "unstructured namespace collides with slot zero"
+    if operator == "computed_assembly_slot_write":
+        code = """    function overwriteComputedSlot(uint256 value) external onlyOwner {
+        assembly {
+            let target := sub(3, 1)
+            sstore(target, value)
+        }
+    }"""
+        return insert_before_contract_end(source, code), "overwriteComputedSlot", "total", "computed assembly target resolves to legacy slot two"
     raise KeyError(operator)
 
 
@@ -317,6 +351,30 @@ def apply_behavior(source: str, operator: str) -> tuple[str, str, str, str]:
     if operator == "success_to_revert":
         changed = source.replace("        require(active, \"inactive\");", "        require(active, \"inactive\");\n        require(false, \"disabled\");", 1)
         return changed, "ACTION", "", "all formerly valid calls revert"
+    if operator == "conditional_state_update":
+        changed = source.replace(
+            "        total = next;",
+            "        if (amount % 2 == 0) { total = next; }",
+            1,
+        )
+        return changed, "ACTION", "total", "post-state differs on odd inputs"
+    if operator == "conditional_event":
+        changed = source.replace(
+            "        emit ValueAdded(msg.sender, amount, total);",
+            "        if (amount % 2 == 0) { emit ValueAdded(msg.sender, amount, total); }",
+            1,
+        )
+        return changed, "ACTION", "", "event trace differs on odd inputs"
+    if operator == "revert_data_change":
+        changed = source.replace('"over limit"', '"amount exceeds policy"', 1)
+        return changed, "ACTION", "", "revert bytes differ while the revert condition is unchanged"
+    if operator == "unsupported_hash_return":
+        changed = source.replace(
+            "        return total;",
+            "        return uint256(keccak256(abi.encode(total, amount)));",
+            1,
+        )
+        return changed, "ACTION", "", "return depends on a hash outside the arithmetic frontend"
     raise KeyError(operator)
 
 
@@ -333,7 +391,13 @@ def source_metrics(source: str) -> dict[str, int]:
     return {
         "LOC": sum(1 for line in source.splitlines() if line.strip() and not line.strip().startswith("//")),
         "number_of_functions": len(re.findall(r"\bfunction\b|\breceive\s*\(", source)),
-        "number_of_storage_variables": len(re.findall(r"^\s{4}(?:address|uint|bool|bytes|mapping)\w*(?:\[[^\]]*\])?\s+(?:public |private |internal )?\w+\s*;", source, re.M)),
+        "number_of_storage_variables": len(
+            re.findall(
+                r"^\s{4}(?:address(?:\s+payable)?|uint\d*(?:\[[^\]]*\])?|bool|bytes\d*|mapping\([^;]+\))\s+(?:(?:public|private|internal)\s+)?\w+\s*;",
+                source,
+                re.M,
+            )
+        ),
         "number_of_branches": len(re.findall(r"\brequire\s*\(|\bif\s*\(", source)),
         "external_call_count": len(re.findall(r"\.call\s*\{", source)),
     }

@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from scipy.stats import beta
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -48,26 +49,75 @@ def storage_figure() -> None:
     ].copy()
     oz["method"] = "OpenZeppelin"
     data = pd.concat([proposed, oz], ignore_index=True)
-    recall = (
-        data.assign(detected=data["verdict"].eq("Unsafe").astype(float))
-        .groupby(["mutation_operator", "method"], as_index=False)["detected"]
-        .mean()
+    operator_group = {
+        "reorder_state_variables": "Decl./order",
+        "insert_state_variable": "Decl./order",
+        "change_inheritance_order": "Decl./order",
+        "change_storage_type": "Type/packing",
+        "change_packed_width": "Type/packing",
+        "move_mapping_root": "Roots/gaps",
+        "move_dynamic_array_root": "Roots/gaps",
+        "expand_storage_gap": "Roots/gaps",
+        "inline_assembly_legacy_slot_write": "Assembly",
+        "namespace_collision": "Assembly",
+        "computed_assembly_slot_write": "Assembly",
+    }
+    data["group"] = data["mutation_operator"].map(operator_group)
+    grouped = (
+        data.assign(detected=data["verdict"].eq("Unsafe").astype(int))
+        .groupby(["group", "method"], as_index=False)["detected"]
+        .agg(["sum", "count"])
+        .reset_index()
     )
-    order = sorted(recall["mutation_operator"].unique())
-    fig, ax = plt.subplots(figsize=(7.05, 2.7))
-    sns.barplot(
-        data=recall,
-        x="mutation_operator",
-        y="detected",
-        hue="method",
-        order=order,
-        ax=ax,
+    # Jeffreys posterior summaries avoid visually absolute boundary estimates
+    # for small controlled groups while retaining the underlying raw counts.
+    grouped["estimate"] = (grouped["sum"] + 0.5) / (grouped["count"] + 1)
+    grouped["lower"] = beta.ppf(
+        0.025, grouped["sum"] + 0.5, grouped["count"] - grouped["sum"] + 0.5
     )
-    ax.set_ylabel("Recall")
-    ax.set_xlabel("Storage mutation operator")
-    ax.set_ylim(0, 1.08)
-    ax.tick_params(axis="x", rotation=35)
-    ax.legend(frameon=False, ncol=2, loc="lower left")
+    grouped["upper"] = beta.ppf(
+        0.975, grouped["sum"] + 0.5, grouped["count"] - grouped["sum"] + 0.5
+    )
+    order = ["Decl./order", "Type/packing", "Roots/gaps", "Assembly"]
+    fig, ax = plt.subplots(figsize=(7.05, 2.55))
+    colors = dict(zip(["UpgradeGuard", "OpenZeppelin"], sns.color_palette("colorblind", 2)))
+    offsets = {"UpgradeGuard": -0.10, "OpenZeppelin": 0.10}
+    labels = {"UpgradeGuard": "UG", "OpenZeppelin": "OZ"}
+    for method in ("UpgradeGuard", "OpenZeppelin"):
+        subset = grouped.loc[grouped["method"].eq(method)].set_index("group").reindex(order)
+        y = np.arange(len(order)) + offsets[method]
+        ax.errorbar(
+            subset["estimate"],
+            y,
+            xerr=np.vstack(
+                [
+                    subset["estimate"] - subset["lower"],
+                    subset["upper"] - subset["estimate"],
+                ]
+            ),
+            fmt="o",
+            capsize=2.5,
+            linewidth=1.1,
+            markersize=4.5,
+            color=colors[method],
+            label=labels[method],
+        )
+        for yi, (_, row) in zip(y, subset.iterrows()):
+            ax.annotate(
+                f"{int(row['sum'])}/{int(row['count'])}",
+                (row["estimate"], yi),
+                xytext=(5, 0),
+                textcoords="offset points",
+                va="center",
+                fontsize=6.5,
+            )
+    ax.set_yticks(np.arange(len(order)), order)
+    ax.invert_yaxis()
+    ax.set_xlabel("Jeffreys detection estimate (95% credible interval)")
+    ax.set_ylabel("Mutation group")
+    ax.set_xlim(0.03, 1.08)
+    ax.grid(axis="x", alpha=0.18)
+    ax.legend(frameon=False, ncol=2, loc="lower right")
     fig.tight_layout()
     fig.savefig(FIGURES / "figure_storage_detection.pdf", bbox_inches="tight")
     plt.close(fig)
@@ -75,35 +125,70 @@ def storage_figure() -> None:
 
 def behavior_figure() -> None:
     full = pd.read_csv(RAW / "full_results.csv")
-    data = full.loc[
-        full["run_id"].eq(1) & full["safety_category"].eq("behavior")
-    ][["mutation_operator", "verdict"]].copy()
-    category = {
-        "Unsafe": "Counterexample",
-        "Safe": "Proved",
-        "Unknown": "Unknown",
-        "Timeout": "Timeout",
+    data = full.loc[full["run_id"].eq(1)].copy()
+    semantic_group = {
+        "rename_local_variable": "Safe refactor",
+        "equivalent_expression_refactor": "Safe refactor",
+        "extract_internal_function": "Safe refactor",
+        "commute_independent_writes": "Safe refactor",
+        "valid_domain_guard": "Safe refactor",
+        "arithmetic_operator_change": "Arithmetic/guard",
+        "comparison_operator_change": "Arithmetic/guard",
+        "remove_require": "Arithmetic/guard",
+        "change_revert_condition": "Arithmetic/guard",
+        "success_to_revert": "Arithmetic/guard",
+        "omit_state_update": "State/return",
+        "wrong_state_variable": "State/return",
+        "return_value_change": "State/return",
+        "conditional_state_update": "State/return",
+        "unsupported_hash_return": "State/return",
+        "omit_event": "Events/calls",
+        "change_call_recipient": "Events/calls",
+        "external_call_order_change": "Events/calls",
+        "conditional_event": "Events/calls",
+        "remove_access_modifier": "Access/revert",
+        "revert_data_change": "Access/revert",
     }
-    data["outcome"] = data["verdict"].map(category)
+    records = []
+    for _, row in data.iterrows():
+        group = semantic_group.get(row["mutation_operator"])
+        if not group:
+            continue
+        results = json.loads(row["behavior_results"])
+        if not results:
+            continue
+        verdict = results[0]["verdict"]
+        records.append({"group": group, "outcome": verdict})
+    outcomes = pd.DataFrame(records)
+    order = [
+        "Safe refactor",
+        "Arithmetic/guard",
+        "State/return",
+        "Events/calls",
+        "Access/revert",
+    ]
+    columns = ["Unsafe", "Safe", "Unknown", "Timeout"]
     pivot = (
-        data.groupby(["mutation_operator", "outcome"])
+        outcomes.groupby(["group", "outcome"])
         .size()
         .unstack(fill_value=0)
-        .reindex(columns=["Counterexample", "Proved", "Unknown", "Timeout"], fill_value=0)
+        .reindex(index=order, columns=columns, fill_value=0)
     )
-    pivot = pivot.div(pivot.sum(axis=1), axis=0) * 100
-    fig, ax = plt.subplots(figsize=(7.05, 2.7))
-    bottom = np.zeros(len(pivot))
-    colors = sns.color_palette("colorblind", 4)
-    for color, column in zip(colors, pivot.columns):
-        values = pivot[column].to_numpy()
-        ax.bar(pivot.index, values, bottom=bottom, label=column, color=color)
-        bottom += values
-    ax.set_ylabel("Cases (%)")
-    ax.set_xlabel("Behavioral mutation operator")
-    ax.set_ylim(0, 105)
-    ax.tick_params(axis="x", rotation=35)
-    ax.legend(frameon=False, ncol=4, loc="lower left")
+    annotations = pivot.astype(str).mask(pivot.eq(0), "")
+    fig, ax = plt.subplots(figsize=(7.05, 2.55))
+    sns.heatmap(
+        pivot,
+        annot=annotations,
+        fmt="",
+        cmap=sns.light_palette("#3366a8", as_cmap=True),
+        linewidths=0.5,
+        linecolor="white",
+        cbar_kws={"label": "Cases", "shrink": 0.82},
+        ax=ax,
+    )
+    ax.set_xticklabels(["CEx", "Proof", "Unk.", "TO"], rotation=0)
+    ax.set_xlabel("Relational outcome")
+    ax.set_ylabel("Semantic group")
     fig.tight_layout()
     fig.savefig(FIGURES / "figure_behavior_detection.pdf", bbox_inches="tight")
     plt.close(fig)
@@ -172,4 +257,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

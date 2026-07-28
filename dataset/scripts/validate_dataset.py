@@ -14,9 +14,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from upgradesafe.pipeline import AnalysisOptions, analyze_pair  # noqa: E402
-
-
 def load_csv(path: Path) -> list[dict[str, str]]:
     with path.open(encoding="utf-8", newline="") as handle:
         return list(csv.DictReader(handle))
@@ -53,7 +50,7 @@ def main() -> None:
     )
 
     duplicate_buckets: dict[tuple[str, str], list[str]] = defaultdict(list)
-    detector_mismatches = []
+    unrealized_ground_truth = []
     missing_artifacts = []
     metadata_mismatches = []
     mutation_failures = []
@@ -82,27 +79,49 @@ def main() -> None:
         if row["v1_path"] not in artifact_index or row["v2_path"] not in artifact_index:
             missing_artifacts.append(row["pair_id"])
             continue
-        result = analyze_pair(
-            ROOT,
-            row,
-            artifact_index,
-            AnalysisOptions(solver_timeout_ms=10_000),
+        old_artifact = artifact_index[row["v1_path"]]
+        new_artifact = artifact_index[row["v2_path"]]
+        old_layout = json.loads(
+            (ROOT / old_artifact["storage_layout"]).read_text(encoding="utf-8")
         )
-        if result["verdict"] != row["expected_verdict"]:
-            detector_mismatches.append(
-                f"{row['pair_id']}:{row['expected_verdict']}->{result['verdict']}"
+        new_layout = json.loads(
+            (ROOT / new_artifact["storage_layout"]).read_text(encoding="utf-8")
+        )
+        old_cells = {
+            item["label"]: f"{item['slot']}:{item['offset']}:{item['type']}"
+            for item in old_layout["storage"]
+        }
+        new_cells = {
+            item["label"]: f"{item['slot']}:{item['offset']}:{item['type']}"
+            for item in new_layout["storage"]
+        }
+        category = row["safety_category"]
+        operator = row["mutation_operator"]
+        assembly_operator = operator in {
+            "inline_assembly_legacy_slot_write",
+            "namespace_collision",
+            "computed_assembly_slot_write",
+        }
+        if category == "storage":
+            realized = old_cells != new_cells or (
+                assembly_operator and "sstore(" in v2 and "sstore(" not in v1
             )
-        if result["layout_issue_count"]:
-            issues = json.loads(result["layout_issues"])
-            affected_slots[row["pair_id"]] = ";".join(
-                sorted(
-                    {
-                        issue["old_location"].split(":")[0]
-                        for issue in issues
-                        if issue["old_location"] not in {"-", ""}
-                    }
-                )
-            )
+        elif category == "behavior":
+            changed = row["changed_function"]
+            realized = bool(changed) and f"function {changed}" in v1 and v1 != v2
+        else:
+            realized = v1 != v2
+        if not realized:
+            unrealized_ground_truth.append(row["pair_id"])
+
+        changed_names = set(old_cells) | set(new_cells)
+        changed_locations = {
+            old_cells[name].split(":")[0]
+            for name in changed_names
+            if name in old_cells and old_cells.get(name) != new_cells.get(name)
+        }
+        if changed_locations:
+            affected_slots[row["pair_id"]] = ";".join(sorted(changed_locations))
 
     duplicates = [
         ids for ids in duplicate_buckets.values() if len(ids) > 1
@@ -111,7 +130,11 @@ def main() -> None:
     record("mutation_applied", not mutation_failures, json.dumps(mutation_failures))
     record("metadata_matches_truth", not metadata_mismatches, json.dumps(metadata_mismatches))
     record("artifacts_complete", not missing_artifacts, json.dumps(missing_artifacts))
-    record("ground_truth_realized", not detector_mismatches, json.dumps(detector_mismatches))
+    record(
+        "ground_truth_realized_independently",
+        not unrealized_ground_truth,
+        json.dumps(unrealized_ground_truth),
+    )
 
     # Fill compiler-resolved affected slots without changing any class label.
     fieldnames = list(rows[0])
@@ -146,4 +169,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -131,8 +131,6 @@ def compare_layouts(
 
     if check_assembly and strategy == "full":
         legacy_slots = occupied_slots(old)
-        old_source_writes = set(re.findall(r"\bsstore\s*\(\s*(\d+)", ""))
-        del old_source_writes  # explicit reminder: only newly supplied source is scanned
         for match in re.finditer(r"\bsstore\s*\(\s*(\d+)", new_source):
             slot = int(match.group(1))
             if slot in legacy_slots:
@@ -145,10 +143,21 @@ def compare_layouts(
                         "literal sstore targets compiler-managed legacy storage",
                     )
                 )
+        for match in re.finditer(r"\bsstore\s*\(\s*([^,\s)]+)", new_source):
+            target = match.group(1)
+            if not target.isdigit():
+                issues.append(
+                    LayoutIssue(
+                        "assembly_unresolved",
+                        target,
+                        "?",
+                        "?",
+                        "computed assembly storage target is outside the literal-slot frontend",
+                    )
+                )
 
     return not issues, issues
 
 
 def issues_as_dicts(issues: list[LayoutIssue]) -> list[dict[str, str]]:
     return [asdict(issue) for issue in issues]
-

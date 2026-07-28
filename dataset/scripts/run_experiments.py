@@ -38,7 +38,7 @@ def classification_metrics(frame: pd.DataFrame) -> dict[str, float | int]:
     tp = int((expected_unsafe & predicted_unsafe).sum())
     tn = int((~expected_unsafe & decided_safe).sum())
     fp = int((~expected_unsafe & predicted_unsafe).sum())
-    fn = int((expected_unsafe & decided_safe).sum())
+    fn = int((expected_unsafe & ~predicted_unsafe).sum())
     precision = tp / (tp + fp) if tp + fp else 0.0
     recall = tp / (tp + fn) if tp + fn else 0.0
     return {
@@ -318,8 +318,8 @@ def main() -> None:
             "fuzz": len(fuzz),
         },
         "limitations": [
-            "DifferentialFuzz is a deterministic local baseline, not a Foundry execution.",
-            "Counterexamples are replayed in the independent relational-summary interpreter; EVM replay is future work.",
+            "DifferentialFuzz is a deterministic bounded baseline, not Forge's built-in fuzzer.",
+            "SMT models are first checked by an independent interpreter and then replayed separately on Foundry Anvil.",
             "The behavioral checker is sound only for the documented generated Solidity subset.",
         ],
     }
@@ -331,4 +331,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -7,6 +7,7 @@ import csv
 from pathlib import Path
 
 import pandas as pd
+from math import sqrt
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -22,6 +23,21 @@ def write(name: str, text: str) -> None:
 
 def esc(text: str) -> str:
     return text.replace("_", r"\_")
+
+
+def bounded(value: float, successes: int | None = None, total: int | None = None) -> str:
+    """Never print an unjustified exact boundary estimate."""
+    if 0.0 < value < 1.0:
+        return f"{value:.3f}"
+    if total and successes is not None:
+        z = 1.96
+        center = (successes + z * z / 2) / (total + z * z)
+        radius = z * sqrt(
+            successes * (total - successes) / total + z * z / 4
+        ) / (total + z * z)
+        return f">{center - radius:.3f}" if value >= 1.0 else f"<{center + radius:.3f}"
+    epsilon = 0.5 / ((total or 1) + 1)
+    return f">{1 - epsilon:.3f}" if value >= 1.0 else f"<{epsilon:.3f}"
 
 
 def dataset_table() -> None:
@@ -63,10 +79,17 @@ def effectiveness_table() -> None:
     frame = pd.read_csv(SUMMARY / "detection_effectiveness.csv")
     lines = []
     for _, row in frame.iterrows():
+        positive = int(row["tp"] + row["fp"])
+        unsafe = int(row["tp"] + row["fn"])
+        negatives = int(row["tn"] + row["fp"])
+        total = int(row["tp"] + row["tn"] + row["fp"] + row["fn"])
         lines.append(
-            f"{esc(row['method'])} & {row['precision']:.3f} & {row['recall']:.3f} & "
-            f"{row['f1']:.3f} & {row['false_positive_rate']:.3f} & "
-            f"{row['unknown_rate']:.3f} & {row['timeout_rate']:.3f} \\\\"
+            f"{esc(row['method'])} & {bounded(row['precision'], int(row['tp']), positive)} & "
+            f"{bounded(row['recall'], int(row['tp']), unsafe)} & "
+            f"{bounded(row['f1'], total=total)} & "
+            f"{bounded(row['false_positive_rate'], int(row['fp']), negatives)} & "
+            f"{bounded(row['unknown_rate'], int(round(row['unknown_rate'] * total)), total)} & "
+            f"{bounded(row['timeout_rate'], int(round(row['timeout_rate'] * total)), total)} \\\\"
         )
     write(
         "table_effectiveness.tex",
@@ -115,9 +138,13 @@ def ablation_table() -> None:
     frame = pd.read_csv(SUMMARY / "ablation_summary.csv").sort_values("variant")
     lines = []
     for _, row in frame.iterrows():
+        total = int(row["tp"] + row["tn"] + row["fp"] + row["fn"])
+        unsafe = int(row["tp"] + row["fn"])
         lines.append(
-            f"{esc(row['variant'])} & {row['accuracy']:.3f} & {row['recall']:.3f} & "
-            f"{row['unknown_rate']:.3f} & {row['timeout_rate']:.3f} & "
+            f"{esc(row['variant'])} & {bounded(row['accuracy'], int(row['tp'] + row['tn']), total)} & "
+            f"{bounded(row['recall'], int(row['tp']), unsafe)} & "
+            f"{bounded(row['unknown_rate'], int(round(row['unknown_rate'] * total)), total)} & "
+            f"{bounded(row['timeout_rate'], int(round(row['timeout_rate'] * total)), total)} & "
             f"{row['median_runtime_ms']:.3f} \\\\"
         )
     write(
@@ -146,4 +173,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
