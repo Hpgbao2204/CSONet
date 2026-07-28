@@ -489,43 +489,82 @@ conservative.  \tool detects 54 storage regressions; the six unresolved cases
 compute an assembly destination before \texttt{sstore} and are returned as
 \(\Unknown\).  OpenZeppelin misses all 18 assembly-group mutations.
 
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\includegraphics[width=0.92\linewidth]{dataset/results/figures/figure_storage_1a_profile.pdf}
-\caption{RQ1 storage detection across four analyzer configurations and
-OpenZeppelin.  Curves use non-boundary Jeffreys estimates.}
-\label{fig:storage-profile}
-\end{figure}
-
-Figure~\ref{fig:storage-profile} avoids boundary percentages and exposes
-configuration sensitivity.  Name-only matching loses root and assembly cases;
-removing type checks loses semantic type mutations; slot/type matching omits
-assembly writes.  Full \tool retains partial assembly coverage.
-
-\begin{figure}[t]
+\begin{minipage}[t]{0.238\textwidth}
 \centering
-\includegraphics[width=0.92\linewidth]{dataset/results/figures/figure_storage_1b_cumulative.pdf}
-\caption{RQ1 cumulative detected storage regressions as mutation groups are
-included from compiler-visible declarations to assembly.}
-\label{fig:storage-cumulative}
-\end{figure}
-
-The five cumulative trajectories in Fig.~\ref{fig:storage-cumulative} show
-where each configuration accumulates evidence.  Full \tool adds 12 assembly
-witnesses after compiler-visible roots, while six computed destinations remain
-unresolved.
-
-\begin{figure}[t]
+\includegraphics[width=\linewidth]{dataset/results/figures/figure_storage_1a_profile.pdf}\\[-1mm]
+\scriptsize (a) Storage detection
+\end{minipage}\hfill
+\begin{minipage}[t]{0.238\textwidth}
 \centering
-\includegraphics[width=\linewidth]{dataset/results/figures/figure_storage_1d_operators.pdf}
-\caption{RQ1 operator-level storage detection for the same five
-configurations.  Abbreviations keep the operator axis readable.}
-\label{fig:storage-operators}
-\end{figure}
+\includegraphics[width=\linewidth]{dataset/results/figures/figure_storage_1b_cumulative.pdf}\\[-1mm]
+\scriptsize (b) Metric profile
+\end{minipage}\hfill
+\begin{minipage}[t]{0.238\textwidth}
+\centering
+\includegraphics[width=\linewidth]{dataset/results/figures/figure_storage_1c_sensitivity.pdf}\\[-1mm]
+\scriptsize (c) Layout latency
+\end{minipage}\hfill
+\begin{minipage}[t]{0.238\textwidth}
+\centering
+\includegraphics[width=\linewidth]{dataset/results/figures/figure_storage_1d_operators.pdf}\\[-1mm]
+\scriptsize (d) Storage evidence
+\end{minipage}
+\caption{Storage-compatibility analysis.  All panels use the same method
+colors and markers: (a) category-level detection profiles, (b) five
+classification criteria, (c) kernel-smoothed latency densities, and
+(d) evidence-source profiles.  ID match is identifier-only matching;
+Slot/type is slot+offset+type matching; No type removes semantic type
+checking; OZ is OpenZeppelin.  Estimates use Jeffreys smoothing only at
+the statistical boundary; measured counts and timings are unchanged.}
+\label{fig:storage-panels}
+\end{figure*}
 
-Figure~\ref{fig:storage-operators} expands the four aggregate classes into all
-11 storage operators.  It separates failures caused by name matching, omitted
-type interpretation, and missing assembly resolution.
+\begin{figure*}[t]
+\centering
+\begin{minipage}[t]{0.238\textwidth}
+\centering
+\includegraphics[width=\linewidth]{dataset/results/figures/figure_behavior_2a_profile.pdf}\\[-1mm]
+\scriptsize (a) Outcome profile
+\end{minipage}\hfill
+\begin{minipage}[t]{0.238\textwidth}
+\centering
+\includegraphics[width=\linewidth]{dataset/results/figures/figure_behavior_2b_latency.pdf}\\[-1mm]
+\scriptsize (b) Verification latency
+\end{minipage}\hfill
+\begin{minipage}[t]{0.238\textwidth}
+\centering
+\includegraphics[width=\linewidth]{dataset/results/figures/figure_behavior_2c_replay.pdf}\\[-1mm]
+\scriptsize (c) Replay quantiles
+\end{minipage}\hfill
+\begin{minipage}[t]{0.238\textwidth}
+\centering
+\includegraphics[width=\linewidth]{dataset/results/figures/figure_behavior_2d_observables.pdf}\\[-1mm]
+\scriptsize (d) Observable combinations
+\end{minipage}
+\caption{Behavioral-equivalence analysis.  The semantic-category palette is
+shared across panels (a)--(c): (a) proposed outcome profiles with an aggregate
+proposed-versus-fuzzing inset, (b) kernel-smoothed verification-time
+densities, (c) connected replay-latency quantiles, and (d) the frequency
+and incidence matrix of observable counterexample combinations.}
+\label{fig:behavior-panels}
+\end{figure*}
+
+Figure~\ref{fig:storage-panels}(a--d) exposes configuration sensitivity without
+perturbing coincident measurements.  Identifier-only matching loses roots and assembly;
+removing type checks loses semantic type mutations; slot+offset+type matching
+omits assembly.  Full \tool detects 12 assembly regressions while six computed
+destinations remain unresolved.  Panel (c) retains all 30-run observations
+through a log-time kernel density
+\[
+ u_{m,i}=\log T_{m,i},\qquad
+ \widehat f_m(u)=\frac{1}{n_mh_m}\sum_{i=1}^{n_m}
+ K\!\left(\frac{u-u_{m,i}}{h_m}\right),
+\]
+where \(m\) indexes the analyzer configuration, \(K\) is a Gaussian kernel,
+and \(h_m\) follows Scott's rule.  This smooths the visualization of measured
+timings without changing any observation or classification outcome.
 
 \subsection{RQ2: behavioral equivalence}
 
@@ -537,81 +576,28 @@ precision in Table~\ref{tab:effectiveness}.  The nine false proofs are evenly
 split among conditional state updates, conditional events, and changed revert
 payloads.  The three hash-based returns are explicitly unsupported.
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.92\linewidth]{dataset/results/figures/figure_behavior_2a_profile.pdf}
-\caption{RQ2 behavioral evidence profile.  The five curves report \tool
-counterexamples, proofs and unknowns, plus bounded-fuzzer counterexamples and
-misses, as raw case counts.}
-\label{fig:behavior-profile}
-\end{figure}
-
-Figure~\ref{fig:behavior-profile} shows more than a binary comparison:
-arithmetic cases contribute four additional \tool counterexamples; state
-changes contain proofs and unknowns; and the fuzzer's misses remain visible
-instead of being folded into one recall value.
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.92\linewidth]{dataset/results/figures/figure_behavior_2b_latency.pdf}
-\caption{RQ2 median behavioral latency decomposed into five pipeline stages.
-The logarithmic ordinate keeps sub-millisecond and solver-dominated stages
-visible together.}
-\label{fig:behavior-latency}
-\end{figure}
-
-Figure~\ref{fig:behavior-latency} attributes most behavioral cost to product
-construction and solver discharge, while artifact, layout, and mapping stages
-remain sub-millisecond across semantic categories.
+Figure~\ref{fig:behavior-panels}(a--d) retains outcome composition and raw timing
+variation.  Arithmetic changes yield four additional \tool detections;
+state changes contain both misses and explicit unknowns.  Panels (b) and (c)
+show skew and category-dependent spread that a straight median trajectory
+would hide.
 All 48 SMT counterexamples were reproduced on Anvil.  Rather than state an
 absolute replay rate, we report its Wilson 95\% lower bound, 0.926; median EVM
 replay time was 808.98\,ms per pair.
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.92\linewidth]{dataset/results/figures/figure_behavior_2c_replay.pdf}
-\caption{RQ2 Anvil replay distribution using five statistics: first quartile,
-median, mean, third quartile, and p95.}
-\label{fig:behavior-replay}
-\end{figure}
-
-Figure~\ref{fig:behavior-replay} separates solver time from bytecode replay.
 Access and interaction cases are slower because replay retains filtered
 opcode traces for call-recipient and call-order comparison.
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.92\linewidth]{dataset/results/figures/figure_behavior_2d_fuzz_budget.pdf}
-\caption{RQ2 bounded-baseline latency under four trial budgets and four
-program-change categories.}
-\label{fig:fuzz-budget}
-\end{figure}
-
-The four curves in Fig.~\ref{fig:fuzz-budget} show that increasing the trial
-budget mainly affects access-control misses that consume the complete budget;
-easy counterexamples terminate early and therefore remain nearly flat.
+Panel (d) groups each replayed witness by the binary observation vector
+\[
+ \boldsymbol{\omega}
+ =(\omega_{\mathrm{return}},\omega_{\mathrm{tx}},
+   \omega_{\mathrm{event}},\omega_{\mathrm{store}},
+   \omega_{\mathrm{call}})\in\{0,1\}^{5}.
+\]
+Its connected incidence matrix therefore distinguishes counterexamples that
+are visible only through state from those corroborated by multiple execution
+channels.
 
 \subsection{RQ3: ablation and performance}
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.92\linewidth]{dataset/results/figures/figure_storage_1c_sensitivity.pdf}
-\caption{RQ3 storage-analysis latency for four configurations across four
-mutation classes.}
-\label{fig:storage-sensitivity}
-\end{figure}
-
-\tool's latency remains stable across storage mutation classes, but
-Fig.~\ref{fig:storage-sensitivity} shows that simpler configurations achieve
-that speed by omitting evidence rather than by optimizing the full relation.
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=\linewidth]{dataset/results/figures/figure_ablation_3a_metrics.pdf}
-\caption{RQ3 five-metric ablation profile.  Accuracy, precision, recall,
-\(F_1\), and decision coverage are kept separate.}
-\label{fig:ablation-profile}
-\end{figure}
 
 \begin{table}[t]
 \caption{Ablation results.  Boundary values are one-sided Wilson limits.}
@@ -620,10 +606,6 @@ that speed by omitting evidence rather than by optimizing the full relation.
 \scriptsize
 \resizebox{\linewidth}{!}{\input{dataset/results/tables/table_ablation.tex}}
 \end{table}
-
-Figure~\ref{fig:ablation-profile} and Table~\ref{tab:ablation} expose different
-views of the same interventions: the figure preserves five simultaneous metric
-trajectories, while the table retains exact estimates and latency summaries.
 
 The full configuration reaches accuracy 0.861 and recall 0.850 over all 180
 pairs (Table~\ref{tab:ablation}).  Removing behavioral analysis reduces recall
@@ -651,28 +633,41 @@ rather than a zero rate.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.92\linewidth]{dataset/results/figures/figure_scaling_3b_quantiles.pdf}
-\caption{RQ4 first quartile, median, third quartile, and p95 batch latency as
-the number of relational obligations increases.}
-\label{fig:scaling-quantiles}
+\includegraphics[width=\linewidth]{dataset/results/figures/figure_scalability_obligations.pdf}
+\caption{RQ4 latency versus relational obligations.  The connected median and
+p95 profiles accompany the raw runs and interquartile band; the inset reports
+the tail-to-median ratio.}
+\label{fig:scalability-obligations}
 \end{figure}
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\linewidth]{dataset/results/figures/figure_scalability.pdf}
-\caption{RQ4 verification time versus batched relational obligations (left)
-and aggregate symbolic path count (right).  Pale points are all 300
-observations; the black curve is the per-batch median.}
-\label{fig:scalability}
+\includegraphics[width=\linewidth]{dataset/results/figures/figure_scalability_paths.pdf}
+\caption{RQ4 latency versus aggregate symbolic paths.  Connected decile
+medians expose the empirical shape, while the dashed line is the fitted OLS
+trend over all 300 observations.}
+\label{fig:scalability-paths}
 \end{figure}
 
-Figure~\ref{fig:scaling-quantiles} shows that dispersion grows together with
-the median rather than being driven by a single outlier series.
-Figure~\ref{fig:scalability} shows a median increase from 19.63\,ms for one
+Figure~\ref{fig:scalability-obligations} shows that dispersion grows together
+with the median rather than being driven by a single outlier series.
+Figure~\ref{fig:scalability-paths} shows a median increase from 19.63\,ms for one
 obligation to 155.46\,ms for ten.  Ordinary least squares gives
 16.45\,ms per added obligation with \(R^2=0.724\); symbolic path count explains
 slightly more variance (\(R^2=0.767\)).  These regressions describe the
 controlled range and are not asymptotic solver guarantees.
+
+Formally, for observation \(i\) we fit the centered models
+\[
+ T_i-\bar T=\beta_o(o_i-\bar o)+\varepsilon_i^{(o)},\qquad
+ T_i-\bar T=\beta_p(p_i-\bar p)+\varepsilon_i^{(p)},
+\]
+where \(o_i\) and \(p_i\) denote obligations and aggregate symbolic paths.
+The reported coefficients minimize
+\(\sum_i(\varepsilon_i^{(\cdot)})^2\), while the figures separately retain
+nonparametric conditional medians.  Agreement between these parametric and
+rank-based summaries supports a monotone scaling interpretation without
+claiming asymptotic linearity.
 
 \section{Discussion}
 \label{sec:discussion}
