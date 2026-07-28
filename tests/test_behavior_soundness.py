@@ -42,16 +42,22 @@ class BehaviorSoundnessTests(unittest.TestCase):
           modifier onlyOwner() { _; }
           function helper(uint256 a) internal { x = a; }
           function f(uint256 a) external onlyOwner { helper(a); }
+          function g(uint256 a) public { x = a; }
         }
         """
         entry_change = base.replace("helper(a);", "helper(a + 1);")
         internal_change = base.replace("x = a;", "x = a + 1;")
         modifier_change = base.replace("modifier onlyOwner() { _; }", "modifier onlyOwner() { require(x > 0); _; }")
         inheritance_change = base.replace("contract C is B", "contract C is D")
-        self.assertEqual(_dependency_surface(base), _dependency_surface(entry_change))
-        self.assertNotEqual(_dependency_surface(base), _dependency_surface(internal_change))
-        self.assertNotEqual(_dependency_surface(base), _dependency_surface(modifier_change))
-        self.assertNotEqual(_dependency_surface(base), _dependency_surface(inheritance_change))
+        unrelated_change = base.replace(
+            "function g(uint256 a) public { x = a; }",
+            "function g(uint256 a) public { x = a + 1; }",
+        )
+        self.assertEqual(_dependency_surface(base, "f"), _dependency_surface(entry_change, "f"))
+        self.assertEqual(_dependency_surface(base, "f"), _dependency_surface(unrelated_change, "f"))
+        self.assertNotEqual(_dependency_surface(base, "f"), _dependency_surface(internal_change, "f"))
+        self.assertNotEqual(_dependency_surface(base, "f"), _dependency_surface(modifier_change, "f"))
+        self.assertNotEqual(_dependency_surface(base, "f"), _dependency_surface(inheritance_change, "f"))
 
     def test_changed_guard_remains_solver_decidable(self):
         first = extract_functions(

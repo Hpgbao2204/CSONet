@@ -13,6 +13,7 @@ from typing import Any
 import psutil
 
 from .behavior import (
+    EquivalenceResult,
     check_equivalence,
     differential_fuzz,
     extract_functions,
@@ -40,22 +41,33 @@ def _normalized(text: str) -> str:
     return re.sub(r"\s+", "", text)
 
 
-def _dependency_surface(source: str) -> str:
+def _dependency_surface(source: str, entry_name: str) -> str:
     """Fingerprint everything an unchanged external method may depend on.
 
-    Public/external bodies are masked so that changing one entry point does not
-    force every other entry point to be rechecked. Their signatures remain,
-    while internal/private bodies, modifiers, inheritance clauses, state
-    declarations, and other contract-level dependencies remain intact.
+    The candidate body and unrelated function bodies are masked. Bodies in its
+    transitive syntactic call closure are retained, including public methods
+    called internally. Modifiers, inheritance, and contract-level declarations
+    stay outside those masks.
     """
 
     functions = extract_functions(source)
+    dependencies: set[str] = set()
+    pending = [entry_name]
+    while pending:
+        caller = pending.pop()
+        if caller not in functions:
+            continue
+        calls = set(re.findall(r"\b([A-Za-z_]\w*)\s*\(", functions[caller].body))
+        for callee in calls & set(functions):
+            if callee != entry_name and callee not in dependencies:
+                dependencies.add(callee)
+                pending.append(callee)
     surface = source
     for function in sorted(functions.values(), key=lambda item: len(item.body), reverse=True):
-        visibility = function.signature
-        if re.search(r"\b(?:public|external)\b", visibility):
-            needle = "{" + function.body + "}"
-            surface = surface.replace(needle, "{<entry-point-body>}", 1)
+        if function.name == entry_name or function.name not in dependencies:
+            needle = function.signature + "{" + function.body + "}"
+            replacement = function.signature + f"{{<masked:{function.name}>}}"
+            surface = surface.replace(needle, replacement, 1)
     return hashlib.sha256(_normalized(surface).encode()).hexdigest()
 
 
@@ -87,17 +99,24 @@ def analyze_pair(
     v1_functions = extract_functions(v1_source)
     v2_functions = extract_functions(v2_source)
     common = sorted(set(v1_functions) & set(v2_functions))
-    dependencies_unchanged = _dependency_surface(v1_source) == _dependency_surface(v2_source)
     syntactically_changed = [
         name
         for name in common
         if "".join(v1_functions[name].body.split()) != "".join(v2_functions[name].body.split())
         or "".join(v1_functions[name].signature.split()) != "".join(v2_functions[name].signature.split())
     ]
-    if options.skip_unchanged and dependencies_unchanged:
-        mapped = syntactically_changed
-    else:
-        mapped = common
+    dependency_changed = {
+        name
+        for name in common
+        if name not in syntactically_changed
+        and _dependency_surface(v1_source, name)
+        != _dependency_surface(v2_source, name)
+    }
+    mapped = (
+        sorted(set(syntactically_changed) | dependency_changed)
+        if options.skip_unchanged
+        else common
+    )
     mapping_ms = (_now() - started) / 1e6
 
     behavior_ms = 0.0
@@ -106,11 +125,27 @@ def analyze_pair(
     if options.behavior and layout_safe:
         for name in mapped:
             started = _now()
-            result = check_equivalence(
-                v1_functions[name],
-                v2_functions[name],
-                timeout_ms=options.solver_timeout_ms,
-            )
+            if name in dependency_changed:
+                result = EquivalenceResult(
+                    verdict="Unknown",
+                    reason=(
+                        "method text is unchanged but a modifier, internal/public "
+                        "callee, inheritance clause, or contract dependency changed"
+                    ),
+                    runtime_ms=0.0,
+                    solver_variables=0,
+                    solver_constraints=0,
+                    symbolic_paths=0,
+                    counterexample=None,
+                    summary_v1="",
+                    summary_v2="",
+                )
+            else:
+                result = check_equivalence(
+                    v1_functions[name],
+                    v2_functions[name],
+                    timeout_ms=options.solver_timeout_ms,
+                )
             behavior_ms += (_now() - started) / 1e6
             item = {"function": name, **result_as_dict(result)}
             behavior_results.append(item)
