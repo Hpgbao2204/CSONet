@@ -68,6 +68,23 @@ class BehaviorSoundnessTests(unittest.TestCase):
         )["f"]
         self.assertEqual("Unsafe", check_equivalence(first, second).verdict)
 
+    def test_unencoded_effects_never_return_safe(self):
+        base = 'contract C { function f(uint256 amount) external returns (uint256) { return amount; } }'
+        variants = [
+            'return amount > 0 ? amount : 1;',
+            'unchecked { return amount + 1; }',
+            'delete records[amount]; return amount;',
+            'payable(msg.sender).transfer(amount); return amount;',
+        ]
+        first = extract_functions(base)["f"]
+        for body in variants:
+            source = f"contract C {{ function f(uint256 amount) external returns (uint256) {{ {body} }} }}"
+            with self.subTest(body=body):
+                self.assertEqual(
+                    "Unknown",
+                    check_equivalence(first, extract_functions(source)["f"]).verdict,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -270,6 +270,11 @@ def summarize(function: FunctionSource) -> FunctionSummary:
         (r"\bassembly\b", "inline assembly"),
         (r"\bdelegatecall\b|\bstaticcall\b", "unmodeled call kind"),
         (r"\bselfdestruct\b|\bcreate2?\b", "lifecycle effect"),
+        (r"\?", "conditional expression"),
+        (r"\bdelete\b", "storage deletion"),
+        (r"\bunchecked\b", "unchecked arithmetic"),
+        (r"\bnew\b", "contract or array creation"),
+        (r"\.(?:transfer|send)\s*\(", "unmodeled value transfer"),
     )
     for pattern, reason in syntax_checks:
         if re.search(pattern, body):
