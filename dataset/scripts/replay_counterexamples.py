@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import subprocess
 from pathlib import Path
 
@@ -46,29 +47,50 @@ def main() -> None:
             }
         )
     result_path = ROOT / "dataset" / "results" / "raw" / "evm_replay.json"
-    manifest = {
-        "anvil_path": str(ROOT / ".tools" / "foundry" / "anvil.exe"),
-        "port": 8547,
-        "pairs": pairs,
-        "result_path": str(result_path),
-    }
-    manifest_path = ROOT / ".cache" / "evm_replay_manifest.json"
-    manifest_path.parent.mkdir(exist_ok=True)
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    subprocess.run(
-        ["node", str(ROOT / "tools" / "foundry_replay.js"), str(manifest_path)],
-        cwd=ROOT,
-        check=True,
-    )
+    cache = ROOT / ".cache"
+    cache.mkdir(exist_ok=True)
+    replay_records: list[dict] = []
+    batch_size = 4
+    for batch_index, start in enumerate(range(0, len(pairs), batch_size)):
+        batch_path = cache / f"evm_replay_batch_{batch_index:02d}.json"
+        manifest = {
+            "anvil_path": str(ROOT / ".tools" / "foundry" / "anvil.exe"),
+            "port": 8547 + batch_index,
+            "pairs": pairs[start : start + batch_size],
+            "result_path": str(batch_path),
+        }
+        manifest_path = cache / f"evm_replay_manifest_{batch_index:02d}.json"
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        subprocess.run(
+            ["node", str(ROOT / "tools" / "foundry_replay.js"), str(manifest_path)],
+            cwd=ROOT,
+            check=True,
+            timeout=90,
+        )
+        replay_records.extend(json.loads(batch_path.read_text(encoding="utf-8")))
+        result_path.write_text(
+            json.dumps(replay_records, indent=2), encoding="utf-8"
+        )
+        print(
+            f"checkpoint: {len(replay_records)}/{len(pairs)} counterexamples",
+            flush=True,
+        )
     replay = pd.read_json(result_path)
     replay.to_csv(
         ROOT / "dataset" / "results" / "raw" / "evm_replay.csv", index=False
     )
+    validated = int(replay["valid"].sum())
+    count = len(replay)
+    z = 1.96
+    center = (validated + z * z / 2) / (count + z * z)
+    radius = z * math.sqrt(
+        validated * (count - validated) / count + z * z / 4
+    ) / (count + z * z)
     summary = {
-        "pairs": len(replay),
-        "validated": int(replay["valid"].sum()),
+        "pairs": count,
+        "validated": validated,
         "errors": int(replay["verdict"].eq("Error").sum()),
-        "valid_counterexample_rate": float(replay["valid"].mean()),
+        "validation_rate_wilson_95_lower": center - radius,
         "median_runtime_ms": float(replay["runtime_ms"].median()),
     }
     (ROOT / "dataset" / "results" / "summary" / "evm_replay_summary.json").write_text(
@@ -79,4 +101,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

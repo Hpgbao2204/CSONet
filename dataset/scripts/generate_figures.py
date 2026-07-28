@@ -102,22 +102,14 @@ def storage_figure() -> None:
             color=colors[method],
             label=labels[method],
         )
-        for yi, (_, row) in zip(y, subset.iterrows()):
-            ax.annotate(
-                f"{int(row['sum'])}/{int(row['count'])}",
-                (row["estimate"], yi),
-                xytext=(5, 0),
-                textcoords="offset points",
-                va="center",
-                fontsize=6.5,
-            )
     ax.set_yticks(np.arange(len(order)), order)
     ax.invert_yaxis()
     ax.set_xlabel("Jeffreys detection estimate (95% credible interval)")
     ax.set_ylabel("Mutation group")
-    ax.set_xlim(0.03, 1.08)
+    ax.set_xlim(0.015, 1.035)
+    ax.set_xticks([0.2, 0.4, 0.6, 0.8])
     ax.grid(axis="x", alpha=0.18)
-    ax.legend(frameon=False, ncol=2, loc="lower right")
+    ax.legend(frameon=False, ncol=2, loc="upper left")
     fig.tight_layout()
     fig.savefig(FIGURES / "figure_storage_detection.pdf", bbox_inches="tight")
     plt.close(fig)

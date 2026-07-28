@@ -216,7 +216,12 @@ async function executeVersion(provider, item, version, signerSet, model) {
   const logs = receipt
     ? receipt.logs.map((log) => ({ topics: log.topics, data: log.data }))
     : [];
-  const trace = await traceObservation(provider, tx.hash);
+  // Opcode traces are only needed for interaction-sensitive withdraw cases.
+  // Avoiding full traces for arithmetic/state mutations keeps replay bounded.
+  const trace =
+    item.changed_function === "withdraw"
+      ? await traceObservation(provider, tx.hash)
+      : [];
   const storage = await postStorage(
     provider,
     await contract.getAddress(),
@@ -262,7 +267,19 @@ async function main() {
       guardian: await provider.getSigner(2)
     };
     const results = [];
-    for (const item of manifest.pairs) {
+    for (const [index, item] of manifest.pairs.entries()) {
+      await provider.send("anvil_reset", []);
+      fs.writeFileSync(
+        `${manifest.result_path}.progress`,
+        JSON.stringify(
+          { index: index + 1, total: manifest.pairs.length, pair_id: item.pair_id },
+          null,
+          2
+        )
+      );
+      process.stdout.write(
+        `replay ${index + 1}/${manifest.pairs.length} ${item.pair_id}\n`
+      );
       const started = process.hrtime.bigint();
       try {
         const model = item.counterexample;
@@ -287,8 +304,12 @@ async function main() {
           error: String(error.stack || error)
         });
       }
+      fs.writeFileSync(
+        manifest.result_path,
+        JSON.stringify(results, null, 2)
+      );
     }
-    fs.writeFileSync(manifest.result_path, JSON.stringify(results, null, 2));
+    fs.rmSync(`${manifest.result_path}.progress`, { force: true });
     process.stdout.write(
       JSON.stringify({
         pairs: results.length,
