@@ -453,14 +453,31 @@ give the balanced disjoint union
 \end{equation}
 Table~\ref{tab:dataset} reports the complete balance.
 
-\begin{table*}[t]
+\begin{table}[t]
 \caption{Controlled corpus composition.  ``S-unsafe'' and ``B-unsafe'' denote
 storage and behavioral regressions.}
 \label{tab:dataset}
 \centering
-\small
-\input{dataset/results/tables/table_dataset.tex}
-\end{table*}
+\scriptsize
+\begin{tabular}{@{}
+>{\raggedright\arraybackslash}m{0.34\columnwidth}
+>{\raggedright\arraybackslash}m{0.58\columnwidth}@{}}
+\toprule
+Property & Corpus configuration \\
+\midrule
+Original contracts & 20 contracts from 10 application families \\
+Application families & Access control, crowdfunding, escrow, marketplace,
+registry, reward distribution, staking, token, vault, and voting \\
+Proxy patterns & 10 Transparent and 10 UUPS instances \\
+Upgrade pairs & 180 independently generated V1--V2 pairs \\
+Ground-truth balance & 60 safe, 60 S-unsafe, and 60 B-unsafe pairs \\
+Mutation vocabulary & 37 safe, layout, behavioral, and unsupported operators \\
+Contract structure & 7--8 public or external functions and eight
+compiler-visible storage variables per original \\
+Solidity version & All V1 and V2 sources compile with Solidity 0.8.30 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 The 37 operators include compatible appends, gap consumption, alpha-renaming,
 equivalent arithmetic, reordered independent writes, declaration insertion,
