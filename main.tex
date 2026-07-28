@@ -47,8 +47,8 @@
 
 \begin{document}
 %
-\title{\tool: Compiler-Grounded Selective Relational Verification for Safe Solidity Upgrades}
-\titlerunning{\tool: Selective Relational Verification for Solidity Upgrades}
+\title{\tool: Compiler-Grounded Bounded Selective Trace Equivalence for Solidity Upgrades}
+\titlerunning{\tool: Bounded Selective Trace Equivalence}
 
 \author{
 Bao Huynh\inst{1,2}\orcidID{0009-0008-8773-0482} \and Tuan-Dung Tran\inst{1,2}\orcidID{0000-0003-1156-7072} \and Van-Hau Pham\inst{1,2}\orcidID{0000-0003-3147-3356}
@@ -66,7 +66,7 @@ Vietnam National University, Ho Chi Minh City, Viet Nam
 \maketitle
 %
 \begin{abstract}
-Proxy upgrades retain an address and persistent storage while replacing the code that interprets them.  A new implementation may therefore reinterpret old bytes or change the observable transition of a preserved entry point.  We present \tool, an offline analyzer combining compiler-grounded storage footprints with selective relational verification.  Its product obligation compares success status, return or revert data, events, external interactions, and related post-state.  Satisfiable obligations yield replayable counterexamples; unsatisfiable obligations establish equivalence within the encoded semantics, declared domain, and supported frontend fragment; unsupported constructs remain explicit.  We evaluate 180 compiling Solidity upgrade pairs over 20 originals and 37 mutation operators using OpenZeppelin and differential-fuzzing baselines, Anvil replay, and 43,500 repeated timing observations.  Storage analysis obtains precision 0.885 and recall 0.900, while behavioral analysis obtains precision 0.873 and recall 0.800.  All 48 solver counterexamples replay on Anvil, with a two-sided Wilson 95\% lower endpoint of 0.926.
+Proxy upgrades retain an address and persistent storage while replacing the code that interprets them. A new implementation may therefore reinterpret old bytes or change the observable transition of a preserved entry point. We present \tool, an offline analyzer that combines compiler-grounded storage footprints with bounded selective trace equivalence. Its product obligation compares success status, return or revert data, events, external interactions, and related post-state. Satisfiable obligations yield replayable counterexamples; unsatisfiable obligations establish equivalence within the encoded semantics, declared domain, and supported frontend fragment. We evaluate a controlled corpus of 180 compiling Solidity upgrade pairs over 20 originals, augmented by 30 mixed-mutation pairs. Storage analysis obtains precision 0.885 and recall 0.900, while behavioral analysis obtains precision 0.873 and recall 0.800. All 48 solver counterexamples replay on Anvil, with a two-sided Wilson 95\% lower endpoint of 0.926.
 
 \keywords{Upgradeable smart contracts \and Relational verification \and Storage layout \and SMT \and Solidity}
 \end{abstract}
@@ -84,7 +84,7 @@ The main contribution is a selective, compiler-grounded account of upgrade safet
 \begin{itemize}
 \item a byte-accurate compatibility relation for packed cells, dynamic roots, inheritance, reserved gaps, and literal assembly writes;
 \item a product semantics over status, return or revert data, events, external interactions, and projected post-state, with explicit \(\Unknown\) and \(\Timeout\) verdicts; and
-\item a controlled evaluation over 180 compiling upgrade pairs with repeated measurements, baselines, EVM replay, and component ablations.
+\item a controlled evaluation over 180 single-mutation and 30 mixed-mutation upgrade pairs with repeated measurements, paired baselines, EVM replay, contract-cluster bootstrap, and component ablations.
 \end{itemize}
 
 \section{Background and Related Work}
@@ -229,7 +229,12 @@ where \(\mathsf{Compat}_{\mathcal{L}}\) abbreviates Eq.~\eqref{eq:layout-compati
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\linewidth]{figure/CSO-Net_cropped.pdf}
+\IfFileExists{figure/CSO-Net_cropped.pdf}
+{\includegraphics[width=\linewidth]{figure/CSO-Net_cropped.pdf}}
+{\fbox{\parbox[c][0.19\textheight][c]{0.94\linewidth}{\centering
+\textbf{Architecture placeholder}\\[0.7ex]
+Compiler artifacts \(\rightarrow\) layout relation \(\rightarrow\)
+selective product obligations \(\rightarrow\) validation and verdict}}}
 \caption{High-level architecture and verification workflow of \tool.}
 \label{fig:architecture}
 \end{figure}
@@ -381,7 +386,7 @@ Assume Eq.~\eqref{eq:layout-compatible}, exact transition encodings \(T_{i,f}\),
 By induction on trace length.  Initially the stores satisfy \(I_\rho\). For the inductive step, unsatisfiability of Eq.~\eqref{eq:product} excludes an observable difference for the next call and establishes related projected post-state.  This post-state is the induction hypothesis for the remaining trace.  The result follows for every finite length.
 \end{proof}
 
-The theorem is a conditional trace-preservation result, not a mechanized frontend-to-EVM correspondence proof; its assumptions make the boundary of a positive verdict explicit.
+The theorem is a conditional trace-preservation result, not a mechanized frontend-to-EVM correspondence proof; its assumptions make the boundary of every \(\Safe\) verdict explicit.
 
 For \(n\) layout cells, \(d\) changed preserved functions, and formula construction sizes \(g_f\), layout indexing costs \(O(n\log n)\), frontend work costs \(O(\sum_{f=1}^{d}g_f)\), and SMT solving remains theory-dependent.  Skipping unchanged methods makes \(d\), rather than the total public-method count, the dominant number of obligations.
 
@@ -391,7 +396,7 @@ For \(n\) layout cells, \(d\) changed preserved functions, and formula construct
 \subsection{Evaluation Setup}
 \label{subsec:eval-design}
 
-The study addresses four questions. RQ1 measures storage-regression detection relative to compiler-grounded mutations plus OpenZeppelin Upgrades Core. RQ2 measures behavioral-regression detection relative to a 128-trial deterministic differential baseline. RQ3 isolates the contribution of layout reasoning, behavioral reasoning, type interpretation, witness validation, selective obligation construction. RQ4 measures verification cost as relational obligations plus symbolic-path mass increase.
+The study addresses four questions. RQ1 measures storage-regression detection relative to compiler-grounded mutations and OpenZeppelin Upgrades Core. RQ2 measures behavioral-regression detection relative to bounded differential execution. RQ3 isolates the contribution of layout reasoning, behavioral reasoning, type interpretation, witness validation, and selective obligation construction. RQ4 measures verification cost as relational obligations and symbolic-path mass increase.
 
 We generate 20 original contracts across ten application families, split evenly between Transparent and UUPS proxy metadata. Each original contains 7--8 public or external functions and eight compiler-visible storage variables, covering inheritance, packed scalars, one mapping, and one dynamic array or reserved gap. Three generated upgrades per category form the balanced disjoint union:
 \begin{equation}
@@ -401,10 +406,11 @@ We generate 20 original contracts across ten application families, split evenly 
 \end{aligned}
 \label{eq:dataset-partition}
 \end{equation}
+An additional stress set \(\mathcal{D}_{\mathrm{mixed}}\), disjoint from \(\mathcal{D}\), contains 30 pairs that combine storage and behavioral faults, multiple behavioral mutations, or a safe rename/refactoring with a true regression.
 
 
 \begin{table}[t]
-\caption{Controlled corpus composition. ``S-unsafe'' denotes storage regressions; ``B-unsafe'' denotes behavioral regressions.}
+\caption{Controlled corpus and mixed-mutation stress set. ``S-unsafe'' denotes storage regressions; ``B-unsafe'' denotes behavioral regressions.}
 \label{tab:dataset}
 \centering
 \scriptsize
@@ -415,58 +421,98 @@ Property & Corpus configuration \\
 Original contracts & 20 contracts from 10 application families \\
 Application families & Access control, crowdfunding, escrow, marketplace, registry, reward distribution, staking, token, vault, voting \\
 Proxy patterns & 10 Transparent instances; 10 UUPS instances \\
-Upgrade pairs & 180 unique \(V_1\)--\(V_2\) pairs \\
-Ground-truth balance & 60 safe, 60 S-unsafe, 60 B-unsafe pairs \\
-Mutation vocabulary & 37 safe, layout, behavioral, unsupported operators \\
+Primary upgrade pairs & 180 unique \(V_1\)--\(V_2\) pairs: 60 safe, 60 S-unsafe, and 60 B-unsafe \\
+Mixed stress pairs & 30 unsafe pairs with two or more jointly realized mutation components \\
+Mutation vocabulary & 37 safe, layout, behavioral, and unsupported operators; per-operator counts are released \\
 Contract structure & 7--8 public or external functions; eight compiler-visible storage variables per original \\
 Solidity version & Every \(V_1\), \(V_2\) source compiles with Solidity 0.8.30 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:dataset} reports the corpus composition. The 37 operators span compatible refactorings, structural changes to packing, types, roots, inheritance, gaps, and assembly writes, plus behavioral changes to guards, arithmetic, state, events, calls, and revert data. Per-operator counts and realization manifests are provided in the artifact; every generated pair passes compilation.
+Table~\ref{tab:dataset} reports the corpus composition. The 37 operators span compatible refactorings, structural changes to packing, types, roots, inheritance, gaps, and assembly writes, plus behavioral changes to guards, arithmetic, state, events, calls, and revert data. The mixed set deliberately breaks the clean one-fault partition: 26 of its 30 pairs combine a detected layout or behavioral discrepancy with a second change, while four combine safe refactoring with a conditional event that remains outside the frontend. Per-operator counts and realization manifests are provided in the artifact; every generated pair passes compilation.
 
-Ground truth is established by a mutation-realization validator over source and compiler artifacts that never invokes \tool; incomplete artifacts, unrealized mutations, and duplicate hashes are rejected.  The controlled construction targets causal isolation and exact cross-version labels rather than ecosystem-prevalence estimation: mined upgrades improve ecological validity but seldom expose exact behavioral ground truth.  Transparent and UUPS conventions, compiler artifacts, OpenZeppelin checks, and Anvil replay provide production-toolchain grounding without making the corpus production-representative.
+Ground truth is established by a mutation-realization validator over source and compiler artifacts that never invokes \tool; incomplete artifacts, unrealized mutations, and duplicate hashes are rejected. The controlled construction targets causal isolation and exact cross-version labels rather than ecosystem-prevalence estimation. We did not mine and manually adjudicate production upgrade histories, so the evaluation claim is explicitly a controlled synthetic evaluation rather than a production-wide estimate. Transparent and UUPS conventions, compiler artifacts, OpenZeppelin checks, and Anvil replay provide production-toolchain grounding without making the corpus production-representative.
 
-Baselines are selected by task alignment. OpenZeppelin Upgrades Core is run on every safe/storage pair as the deployable layout baseline; DifferentialFuzz-128 performs 128 deterministic trials on every safe/behavior pair as the bounded observational baseline. Related single-version or vulnerability-specific systems are therefore compared qualitatively rather than treated as interchangeable executables.  On unsafe pairs, \(\Unknown\) or \(\Timeout\) counts as a false negative; on safe pairs, \(\Unsafe\) counts as a false positive. Raw accuracy treats non-decisions as incorrect, coverage counts definite \(\Safe/\Unsafe\) verdicts, and decided-case accuracy conditions on them.
+\begin{table}[t]
+\caption{Declared bounded verification domain used for the controlled behavioral evaluation.}
+\label{tab:verification-domain}
+\centering
+\scriptsize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}m{0.34\columnwidth}>{\raggedright\arraybackslash}m{0.58\columnwidth}@{}}
+\toprule
+Domain component & Encoded scope \\
+\midrule
+Arguments and pre-state & Bounded unsigned integers for amount, balance, total, and limit; Boolean active flag; related old/new storage \\
+Caller and value & Owner or non-owner sender; zero \texttt{msg.value} unless the selected entry point declares value use \\
+Block context & Shared fixed chain, block, timestamp, and transaction context for both versions \\
+External calls & Shared ordered success/failure oracle \(\kappa\), including recipient, value, outcome, and order \\
+Environment & Non-reentrant execution; gas exhaustion and gas-sensitive equivalence are not modeled \\
+Reduced Safe check & \(\texttt{amount}\in\{1,2\}\), \(\texttt{total},\texttt{balance}\in\{0,2\}\), \(\texttt{limit}=2\), \(\texttt{active}=\mathsf{true}\), owner/non-owner callers, and \(\texttt{msg.value}=0\) \\
+Unencoded constructs & Conditional effects, loops, arbitrary revert encoding, behavioral assembly, unmodeled call kinds, lifecycle effects, and unresolved expressions return \(\Unknown\) \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-Detection proportions use two-sided Wilson 95\% intervals, and paired baseline comparisons use exact McNemar tests over matching \texttt{pair\_id}s. To preserve dependence among the nine variants derived from each source, overall metrics also use a nonparametric cluster bootstrap over the 20 original contracts (50,000 replicates, seed 26072026). The full four-state confusion matrix and construct-level support matrix are provided in the artifact.
+Table~\ref{tab:verification-domain} makes \(D_f\) operational: a verdict quantifies only over the listed argument, state, caller, context, and oracle choices. It does not quantify over arbitrary block environments, reentrant callees, or out-of-gas behavior.
 
-The 180 unique pairs determine detection metrics; repeated runs support timing estimates only. After three warmups, the full configuration and seven ablations are measured 30 times, and the scaling study adds 300 batch observations, yielding 43,500 timing observations. Experiments use Windows 11, an AMD Ryzen 7 7840HS (8 cores/16 threads), 32\,GB RAM, Python 3.12.10, Z3 4.13.4, Node 22.13.0, and Anvil 1.7.1. The anonymous artifact contains source pairs, manifests, measurements, replay traces, and plotting scripts; latency may vary across hardware and tool versions~\footnote{\url{https://anonymous.4open.science/r/CSONet-34CB/}}.
+Baselines are selected by task alignment. OpenZeppelin Upgrades Core is run on every safe/storage pair as the deployable layout baseline. Differential execution is run at budgets 32, 128, 512, and 2048 under ten seeds on every safe/behavior pair. Related single-version or vulnerability-specific systems are therefore compared qualitatively rather than treated as interchangeable executables. On unsafe pairs, \(\Unknown\) or \(\Timeout\) counts as a false negative; on safe pairs, \(\Unsafe\) counts as a false positive. Raw accuracy treats non-decisions as incorrect, coverage counts definite \(\Safe/\Unsafe\) verdicts, and decided-case accuracy conditions on them.
+
+Detection proportions use two-sided Wilson 95\% intervals, and paired baseline comparisons use exact McNemar tests over matching \texttt{pair\_id}s. To preserve dependence among variants derived from each source, overall metrics also use a nonparametric cluster bootstrap over the 20 original contracts (100,000 replicates, seed 26072026). Sensitivity summaries treat each original contract and each mutation family as the sampling unit rather than treating repeated timings as independent detection evidence.
+
+\begin{table}[t]
+\caption{Frontend admission matrix. Every unlisted or unresolved effect is conservatively \(\Unknown\).}
+\label{tab:frontend-support}
+\centering
+\scriptsize
+\begin{tabular}{@{}>{\raggedright\arraybackslash}m{0.34\columnwidth}>{\raggedright\arraybackslash}m{0.58\columnwidth}@{}}
+\toprule
+Verdict capability & Frontend constructs \\
+\midrule
+\Safe-capable & Straight-line selected entry points; \texttt{onlyOwner}; supported guards and integer expressions; direct modeled writes; unconditional events/returns; generated payable calls; compiler static layouts, roots, and gap consumption \\
+\Unknown & Conditional effects; loops and \texttt{try/catch}; behavioral assembly; computed assembly storage targets; arbitrary revert encoding; \texttt{delegatecall}/\texttt{staticcall}; \texttt{transfer}/\texttt{send}; lifecycle effects; unsupported hash/index expressions; changed unresolved dependencies \\
+\Timeout & Solver resource exhaustion, reported separately from frontend rejection \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The 180 primary pairs determine the principal detection metrics; the 30 mixed pairs are reported as a separate robustness set, and repeated runs support timing estimates only. After three warmups, seven configurations in total---the full system plus six ablations---are measured 30 times. This yields 37,800 primary configuration-level timing observations; the expanded scaling study adds 240 batches, and the fuzz-budget sweep adds 4,800 pair--budget--seed observations. Experiments use Windows 11, an AMD Ryzen 7 7840HS (8 cores/16 threads), 32\,GB RAM, Python 3.12.10, Z3 4.13.4, Node 22.13.0, and Anvil 1.7.1. The anonymous artifact contains source pairs, manifests, measurements, replay traces, and scripts that recreate statistics and vector figures from CSV; latency may vary across hardware and tool versions~\footnote{\url{https://anonymous.4open.science/r/CSONet-34CB/}}.
 
 \begin{figure*}[t]
 \centering
+\includegraphics[width=0.70\textwidth]{figure/figure_storage_legend.pdf}\\[-0.5ex]
 \begin{subfigure}[t]{0.322\textwidth}
 \centering
 \includegraphics[width=\linewidth]{figure/figure_storage_1a_profile.pdf}
-\caption{Mutation-family detection}
+\caption{Difficult assembly operators}
 \label{fig:storage-family}
 \end{subfigure}\hfill
 \begin{subfigure}[t]{0.322\textwidth}
 \centering
 \includegraphics[width=\linewidth]{figure/figure_storage_1c_sensitivity.pdf}
-\caption{Layout-analysis latency}
+\caption{Stage-wise analyzer latency}
 \label{fig:storage-latency}
 \end{subfigure}\hfill
 \begin{subfigure}[t]{0.322\textwidth}
 \centering
 \includegraphics[width=\linewidth]{figure/figure_storage_1d_operators.pdf}
-\caption{Evidence sources}
+\caption{Cluster-bootstrap recall}
 \label{fig:storage-evidence}
 \end{subfigure}
-\caption{Storage-regression results. Legends use UG for \tool, ID for identifier matching, S+T for slot--offset--type matching, \(-\tau\) for removal of type checking, and OZ for OpenZeppelin. S+T coincides with OZ in Fig.~\ref{fig:storage-family}.}
+\caption{Storage-regression results. Panel (a) reports the three difficult assembly operators with Wilson-adjusted centers and two-sided 95\% intervals; compiler-described declaration, packing, and root families are omitted because both analyzers detect the same cases. Panel (b) decomposes median \tool latency over five equally sized contract-complexity groups. Panel (c) shows contract-cluster bootstrap recall densities and the paired recall-gain distribution. UG denotes \tool and OZ denotes OpenZeppelin.}
 \label{fig:storage-results}
 \end{figure*}
 
 \subsection{Storage-Regression Detection}
 \label{subsec:storage-results}
 
-Figure~\ref{fig:storage-results} summarizes RQ1. \tool detects 54 of 60 storage regressions (90.0\%, two-sided Wilson 95\% CI: 79.9\%--95.3\%), compared with 42 of 60 for OpenZeppelin (70.0\%, 57.5\%--80.1\%). At pair level, both detect 42 cases, 12 are detected only by \tool, none only by OpenZeppelin, and six by neither; the difference is significant under exact McNemar (\(p=4.88\times10^{-4}\)) and contract-level sign-flip (\(p=0.0078\)) tests. Precision is 0.885 and \(F_1=0.893\). The family breakdown in Fig.~\ref{fig:storage-family} shows that the gain is not isolated to one operator. Figure~\ref{fig:storage-evidence} separates the compiler, assembly, unresolved, and false-alarm evidence behind the aggregate verdicts.
+Figure~\ref{fig:storage-results} summarizes RQ1. \tool detects 54 of 60 storage regressions (90.0\%, two-sided Wilson 95\% CI: 79.9\%--95.3\%), compared with 42 of 60 for OpenZeppelin (70.0\%, 57.5\%--80.1\%). At pair level, both detect 42 cases, 12 are detected only by \tool, none only by OpenZeppelin, and six by neither; the difference is significant under exact McNemar (\(p=4.88\times10^{-4}\)). Precision is 0.885 and \(F_1=0.893\). Figure~\ref{fig:storage-family} localizes the separation: the analyzers agree on compiler-described declaration, packing, and root changes, whereas \tool recovers 12 literal-assembly and namespace cases that OpenZeppelin accepts.
 
-Six computed \texttt{sstore} destinations remain \(\Unknown\) because their target slots cannot be resolved by the current frontend. The precision loss primarily comes from label-based correspondence on safe alpha-renaming cases. This exposes a trade-off: declaration identity avoids unsafe type matches, while user-confirmable correspondence could recover safe refactoring without weakening physical checks. Figure~\ref{fig:storage-latency} shows that simplified matchers reduce latency by discarding evidence rather than optimizing the complete relation.
+Six computed \texttt{sstore} destinations remain \(\Unknown\) because their target slots cannot be resolved by the current frontend. The precision loss primarily comes from label-based correspondence on seven safe alpha-renaming cases. This exposes a trade-off: declaration identity avoids unsafe type matches, while user-confirmable correspondence could recover safe refactoring without weakening physical checks. Figure~\ref{fig:storage-latency} attributes latency to extraction, layout, correspondence, and validation across contracts instead of conflating these stages, while Fig.~\ref{fig:storage-evidence} bootstraps whole originals so the displayed variation is not manufactured from repeated timings.
 
 \begin{figure*}[t]
 \centering
+\includegraphics[width=0.72\textwidth]{figure/figure_behavior_legend.pdf}\\[-0.5ex]
 \begin{subfigure}[t]{0.322\textwidth}
 \centering
 \includegraphics[width=\linewidth]{figure/figure_behavior_2a_profile.pdf}
@@ -476,28 +522,52 @@ Six computed \texttt{sstore} destinations remain \(\Unknown\) because their targ
 \begin{subfigure}[t]{0.322\textwidth}
 \centering
 \includegraphics[width=\linewidth]{figure/figure_behavior_2c_replay.pdf}
-\caption{Replay quantiles}
+\caption{Fuzz-budget runtime}
 \label{fig:behavior-replay}
 \end{subfigure}\hfill
 \begin{subfigure}[t]{0.322\textwidth}
 \centering
 \includegraphics[width=\linewidth]{figure/figure_behavior_2d_observables.pdf}
-\caption{Replay evidence}
+\caption{Observable-channel coverage}
 \label{fig:behavior-evidence}
 \end{subfigure}
-\caption{Behavioral-regression results. The hardened run produces 12 \(\Unknown\) verdicts and zero timeouts; evidence curves condition on validated witnesses.}
+\caption{Behavioral-regression results. Panel (a) reports Wilson-adjusted \tool detection, differential detection, and \(\Unknown\) outcomes by semantic class. Panel (b) reports the p95 runtime slowdown relative to 32 trials for four semantic classes. Panel (c) gives grouped Wilson-adjusted witness fractions over the 48 EVM replays for return/revert, transaction status, events, storage, and calls.}
 \label{fig:behavior-results}
 \end{figure*}
 
 \subsection{Behavioral-Regression Detection}
 \label{subsec:behavior-results}
 
-Figure~\ref{fig:behavior-results} summarizes RQ2. The hardened analyzer detects 48 of 60 behavioral regressions (80.0\%, two-sided Wilson 95\% CI: 68.2\%--88.2\%), versus 44 of 60 for DifferentialFuzz-128 (73.3\%, 61.0\%--82.9\%). Both detect 44 pairs, four are detected only by \tool, none only by the baseline, and 12 by neither. The observed 6.7-point gain is not significant under either exact McNemar or contract-level sign-flip tests (both \(p=0.125\)). Figure~\ref{fig:behavior-detection} locates the additional detections in arithmetic mutations; the remaining 12 cases are \(\Unknown\), with no incorrect \(\Safe\) verdict or timeout.
+Figure~\ref{fig:behavior-results} summarizes RQ2. The hardened analyzer detects 48 of 60 behavioral regressions (80.0\%, two-sided Wilson 95\% CI: 68.2\%--88.2\%), versus 44 of 60 for DifferentialFuzz-128 (73.3\%, 61.0\%--82.9\%). Both detect 44 pairs, four are detected only by \tool, none only by the baseline, and 12 by neither. The observed 6.7-point gain is not significant under exact McNemar (\(p=0.125\)); we therefore report four additional detections on this corpus rather than claiming baseline superiority. The remaining 12 cases are \(\Unknown\), with no incorrect \(\Safe\) verdict or timeout. Across budgets 32, 128, 512, and 2048, ten fuzzing seeds retain the same 44 detections while median total baseline time rises from 22.36\,ms to 145.91\,ms. The class-wise p95 curves in Fig.~\ref{fig:behavior-replay} show that arithmetic and access/revert schedules absorb this increase, whereas event and state cases saturate early.
 
-Every SMT witness reproduces on Anvil: 48 of 48, with a two-sided Wilson 95\% lower endpoint of 0.926. Figure~\ref{fig:behavior-replay} reports a median replay latency of 808.98\,ms, separate from analyzer and in-process validation latency. Figure~\ref{fig:behavior-evidence} separates return/revert data, transaction status, events, projected storage, and external-call traces, confirming differences beyond post-state alone.
+Every SMT witness reproduces on Anvil: 48 of 48, with a two-sided Wilson 95\% lower endpoint of 0.926. Median Anvil replay latency is 812.36\,ms and is reported separately from analyzer and in-process summary-validation latency. Figure~\ref{fig:behavior-replay} shows that increasing the differential budget raises cost without changing the 44 detected pairs, while Fig.~\ref{fig:behavior-evidence} confirms that replay checks status, return/revert data, events, projected storage, and external-call order rather than post-state alone.
+
+Unsafe replay does not test an unsatisfiable obligation, so we separately select eight definite \(\Safe\) pairs spanning commuting independent writes, equivalent expressions, local renames, and domain-preserving guards. Exhaustive differential execution over the reduced subdomain in Table~\ref{tab:verification-domain} evaluates 16 related states per pair, giving 128 paired checks and 256 version executions. The EVM agrees with the model's equality prediction in every check, with no mismatch or execution error in status, return/revert data, events, or projected storage. Opcode traces are collected for 16 representative states and confirm empty external-call sequences on both versions; because these selected entry points do not call externally, this experiment does not validate a nonempty call oracle or reentrancy.
+
+The separate mixed-mutation stress set yields 26 \(\Unsafe\) and four \(\Unknown\) verdicts, with no \(\Safe\) verdict or timeout on an unsafe pair. Its recall and coverage are 0.867, and all 26 decided cases agree with ground truth. These results are not pooled into the balanced primary metrics because the mixed pairs contain multiple causal components.
+
+\begin{table}[t]
+\caption{Four-state confusion counts. Primary unsafe combines the 60 storage and 60 behavioral regressions; mixed unsafe is reported separately.}
+\label{tab:confusion}
+\centering
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Ground truth & \Safe & \Unsafe & \Unknown & \Timeout \\
+\midrule
+Primary safe (\(n=60\)) & 24 & 7 & 29 & 0 \\
+Primary unsafe (\(n=120\)) & 0 & 102 & 18 & 0 \\
+Mixed unsafe (\(n=30\)) & 0 & 26 & 4 & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:confusion} retains non-decisions instead of silently mapping them to a binary label. It also distinguishes the seven conservative false alarms on safe renames from the absence of an incorrect \(\Safe\) outcome on both unsafe subsets.
 
 \begin{figure*}[t]
 \centering
+\includegraphics[width=0.88\textwidth]{figure/figure_diagnostics_legend.pdf}\\[-0.5ex]
 \begin{subfigure}[t]{0.322\textwidth}
 \centering
 \includegraphics[width=\linewidth]{figure/figure_diagnostics_3a_quality.pdf}
@@ -507,7 +577,7 @@ Every SMT witness reproduces on Anvil: 48 of 48, with a two-sided Wilson 95\% lo
 \begin{subfigure}[t]{0.322\textwidth}
 \centering
 \includegraphics[width=\linewidth]{figure/figure_diagnostics_3b_decision.pdf}
-\caption{Accuracy and coverage}
+\caption{Accuracy, coverage, decided accuracy}
 \label{fig:diagnostics-decision}
 \end{subfigure}\hfill
 \begin{subfigure}[t]{0.322\textwidth}
@@ -516,7 +586,7 @@ Every SMT witness reproduces on Anvil: 48 of 48, with a two-sided Wilson 95\% lo
 \caption{Median and tail latency}
 \label{fig:diagnostics-latency}
 \end{subfigure}
-\caption{Component contribution under a shared configuration order. Compilation and Anvil replay are excluded from analyzer latency.}
+\caption{Component contribution and latency attribution. Panels (a)--(b) use grouped bars because the seven configurations are categorical, with Full highlighted by the background band. Panel (c) decomposes median frontend, SMT, and validation costs for layout-only, unresolved, and behavioral paths; the line reports p95 total analyzer latency. Compilation and Anvil replay are excluded.}
 \label{fig:diagnostics}
 \end{figure*}
 
@@ -527,30 +597,37 @@ Figure~\ref{fig:diagnostics} summarizes the ablations. In Fig.~\ref{fig:diagnost
 
 Figure~\ref{fig:diagnostics-decision} shows that analyzing every public function preserves the principal detection metrics but lowers coverage to 0.606 by moving skippable inputs to \(\Unknown\). Selectivity therefore prevents unrelated unsupported code from suppressing definite verdicts.
 
-Analyzer latency covers loading, layout and correspondence, product construction, solving, and in-process validation; compilation and replay are excluded. Figure~\ref{fig:diagnostics-latency} reports a 1.25\,ms median and 19.75\,ms p95. Disabling witness validation gives 1.55\,ms and 22.72\,ms, so its independent consistency check has no measured cost benefit; removing behavioral reasoning leaves the median near 1.27\,ms but lowers p95 to 1.77\,ms, identifying solver obligations as the tail driver.
+Analyzer latency covers loading, layout and correspondence, product construction, solving, and in-process validation; compilation and replay are excluded. Figure~\ref{fig:diagnostics-latency} reports a 1.27\,ms median and 19.73\,ms p95 for Full. The apparent gap between this median and a relational obligation is caused by workload mixture: layout-only cases have median 1.11\,ms, unresolved cases 1.34\,ms, and behavioral cases 17.09\,ms with p95 25.40\,ms. Within behavioral cases, median frontend, SMT, and summary-validation costs are 2.83\,ms, 12.92\,ms, and 0.37\,ms, respectively. This decomposition distinguishes analysis latency, in-process validation, and the much larger 812.36\,ms median Anvil replay latency.
 
 \begin{figure*}[t]
 \centering
-\begin{subfigure}[t]{0.485\textwidth}
+\includegraphics[width=0.72\textwidth]{figure/figure_scalability_legend.pdf}\\[-0.5ex]
+\begin{subfigure}[t]{0.322\textwidth}
 \centering
 \includegraphics[width=\linewidth]{figure/figure_scalability_obligations.pdf}
 \caption{Relational obligations}
 \label{fig:scalability-obligations}
 \end{subfigure}\hfill
-\begin{subfigure}[t]{0.485\textwidth}
+\begin{subfigure}[t]{0.322\textwidth}
 \centering
 \includegraphics[width=\linewidth]{figure/figure_scalability_paths.pdf}
 \caption{Symbolic-path mass}
 \label{fig:scalability-paths}
+\end{subfigure}\hfill
+\begin{subfigure}[t]{0.322\textwidth}
+\centering
+\includegraphics[width=\linewidth]{figure/figure_scalability_stages.pdf}
+\caption{Stage-wise median cost}
+\label{fig:scalability-stages}
 \end{subfigure}
-\caption{Scalability under controlled relational batches.}
+\caption{Scalability under controlled relational batches. Panel (a) reports median, IQR, and p95; panel (b) overlays an ordinary least-squares fit and case-resampling 95\% band on all measured batches; panel (c) separates frontend, SMT, and validation cost.}
 \label{fig:scalability}
 \end{figure*}
 
 \subsection{Scalability under Relational Workloads}
 \label{subsec:scalability-results}
 
-Figure~\ref{fig:scalability} summarizes controlled relational batches. Figure~\ref{fig:scalability-obligations} shows median latency rising from 19.63\,ms for one obligation to 155.46\,ms for ten, with an OLS slope of 16.45\,ms and \(R^2=0.724\). Figure~\ref{fig:scalability-paths} gives \(R^2=0.767\), making aggregate symbolic-path mass the stronger tested workload proxy. For observation \(i\), the centered models are
+Figure~\ref{fig:scalability} summarizes 240 controlled relational batches spanning one to 50 obligations and up to approximately 280 symbolic paths. Figure~\ref{fig:scalability-obligations} shows median latency rising from 16.55\,ms for one obligation to 168.33\,ms for ten and 829.97\,ms for 50. The observation-level linear fit has slope 17.29\,ms per obligation and \(R^2=0.971\); symbolic-path mass gives \(R^2=0.969\). For observation \(i\), the centered diagnostic models are
 \begin{equation}
 \begin{aligned}
 T_i-\bar T &= \beta_o(o_i-\bar o)+\varepsilon_i^{(o)},\\
@@ -558,7 +635,7 @@ T_i-\bar T &= \beta_p(p_i-\bar p)+\varepsilon_i^{(p)}.
 \end{aligned}
 \label{eq:scaling-model}
 \end{equation}
-where \(o_i\) denotes relational obligations, while \(p_i\) denotes aggregate symbolic paths. The measured medians plus fitted trends exhibit monotone growth with an approximately linear central trend across batches one through ten.
+where \(o_i\) denotes relational obligations, while \(p_i\) denotes aggregate symbolic paths. Figure~\ref{fig:scalability-stages} explains the slope: at 50 obligations, median frontend, SMT, and validation costs are 136.03\,ms, 636.65\,ms, and 19.01\,ms. SMT dominates the expanded range, while validation remains a small, explicitly measured stage.
 
 \section{Discussion}
 \label{sec:discussion}
@@ -571,12 +648,23 @@ The three evidence levels serve different roles. Compiler diagnostics identify t
 
 Conservative verdicts trade completeness for trust: label identity creates seven false alarms on safe renames; computed assembly and unsupported behavior remain \(\Unknown\). User-confirmed correspondence and control-flow-sensitive summaries are direct extension points.
 
-The corpus is designed for controlled identification, not production prevalence. Exact mutation labels and a non-\tool\ realization validator strengthen internal validity; shared originals limit pair independence, addressed by contract-cluster bootstrap. Compiler, proxy, OpenZeppelin, and Anvil components provide production-toolchain grounding, but not production representativeness. The results therefore establish controlled effectiveness over the declared transformation vocabulary; production-wide recall remains outside the present claim.
+An earlier audited revision treated nine behavioral cases with incompletely encoded conditional effects as \(\Safe\). Hardening changed the admission rule so that construct/effect completeness is required before an unsatisfiable obligation may produce \(\Safe\); the current artifact maps those cases to \(\Unknown\). All primary figures, metrics, latency measurements, and confusion counts in this paper were regenerated from the hardened revision.
+
+\section{Threats to Validity}
+\label{sec:threats}
+
+\textbf{Internal validity.} Exact mutation labels and a validator independent of \tool strengthen causal attribution, but generated source templates can share implementation regularities. The 20 originals are therefore the bootstrap unit; repeated runs reduce timing noise and never inflate detection sample size. The mixed set challenges single-fault isolation but remains generated from the same originals.
+
+\textbf{Construct and external validity.} The corpus is controlled and synthetic, not a sample of production upgrade prevalence. Compiler artifacts, Transparent and UUPS metadata, OpenZeppelin, and Anvil ground the experiment in a production toolchain, but no precision or recall claim is made for independently collected real upgrade histories. The result is bounded selective trace equivalence for the declared mutation vocabulary, not general Solidity upgrade safety.
+
+\textbf{Semantic validity.} \(D_f\) bounds arguments, related initial state, caller context, and the shared external-call oracle. The environment is non-reentrant; gas exhaustion, gas-sensitive equivalence, packed dynamic descendants, conditional effects, loops, arbitrary behavioral assembly, and other constructs in Table~\ref{tab:frontend-support} are not fully encoded. They produce \(\Unknown\), but an implementation defect inside the admitted frontend could still affect a \(\Safe\) result. The reduced-domain EVM check tests 128 concrete states of selected unsatisfiable cases, not frontend--EVM soundness outside that finite domain.
+
+\textbf{Baseline and performance validity.} OpenZeppelin is a layout baseline, whereas differential execution is a behavioral baseline; neither represents all competing analyzers. Fuzz budgets from 32 to 2048 and ten seeds measure the selected schedule only. Timing excludes compilation and reports analyzer, summary validation, and Anvil replay separately; absolute values remain hardware- and version-dependent.
 
 \section{Conclusion}
 \label{sec:conclusion}
 
-\tool frames Solidity proxy replacement safety as selective relational verification of persistent-state interpretation and observable transitions. Across 180 compiling upgrade pairs, it detects 54 of 60 storage regressions, a significant 20-point gain over OpenZeppelin on the paired corpus, and 48 of 60 behavioral regressions versus 44 under deterministic differential execution. All 48 solver witnesses reproduce on Anvil. Compiler-grounded storage reasoning, selective product obligations, explicit uncertainty, and independently checked counterexamples therefore provide stronger controlled upgrade evidence than layout checking or bounded differential execution alone.
+\tool frames Solidity proxy replacement safety as bounded selective trace equivalence over persistent-state interpretation and observable transitions. Across 180 primary compiling upgrade pairs, it detects 54 of 60 storage regressions, a significant 20-point gain over OpenZeppelin on the paired corpus, and 48 of 60 behavioral regressions versus 44 under deterministic differential execution; it additionally detects 26 of 30 mixed-mutation pairs and returns \(\Unknown\) for four. All 48 solver witnesses reproduce on Anvil. Compiler-grounded storage reasoning, selective product obligations, explicit uncertainty, and independently checked counterexamples provide controlled upgrade evidence without claiming general Solidity safety.
 
 The guarantee remains bounded by the declared domain, admitted frontend fragment, and modeled environment. Computed assembly, control-flow-sensitive effects, conservative rename correspondence, and independently collected production histories remain open. Future work will broaden these boundaries while preserving the separation between bounded safety, replayable unsafety, and explicit uncertainty.
 
