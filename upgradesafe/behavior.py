@@ -404,7 +404,7 @@ def check_equivalence(
             one.digest(),
             two.digest(),
         )
-    if one.revert_payloads != two.revert_payloads:
+    if one.guards == two.guards and one.revert_payloads != two.revert_payloads:
         return EquivalenceResult(
             "Unknown",
             "revert payload differs and arbitrary revert-data encoding is outside the model",

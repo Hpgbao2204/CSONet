@@ -53,6 +53,15 @@ class BehaviorSoundnessTests(unittest.TestCase):
         self.assertNotEqual(_dependency_surface(base), _dependency_surface(modifier_change))
         self.assertNotEqual(_dependency_surface(base), _dependency_surface(inheritance_change))
 
+    def test_changed_guard_remains_solver_decidable(self):
+        first = extract_functions(
+            'contract C { function f(uint256 amount) external { require(amount > 0, "positive"); } }'
+        )["f"]
+        second = extract_functions(
+            'contract C { function f(uint256 amount) external { require(false, "disabled"); } }'
+        )["f"]
+        self.assertEqual("Unsafe", check_equivalence(first, second).verdict)
+
 
 if __name__ == "__main__":
     unittest.main()
